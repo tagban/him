@@ -180,3 +180,27 @@ def test_happy_news_leaves_out_the_grim():
     assert parse_feed(rss, "GNN") == [("Town plants 10,000 trees", "https://x/1", "GNN")]
     from smarterchild.hub import command
     assert command("!happynews") == "happy news"
+
+
+def test_it_says_what_it_is(brain):
+    for q in ("who are you", "what are you?", "are you a bot", "where are you from", "who made you"):
+        r = ask(brain, q, who="bob")
+        assert "chatterbot based on SmarterChild from AOL Instant Messenger" in r, q
+        assert "https://github.com/tagban/him/releases" in r and "HL Central Hub" in r
+    room = "\n".join(asyncio.run(brain.answer("hub:pat", "what are you", room=True)))
+    assert "AOL Instant Messenger" in room and "!help" in room
+
+
+def test_news_routes(brain):
+    from smarterchild.hub import command
+    news_skills = ("happy_news", "news_on", "news", "wiki")
+
+    def route(q):  # the first news-ish skill that claims the message
+        return next(s.handler.__name__ for s in brain.skills
+                    if s.handler.__name__ in news_skills and s.pattern.fullmatch(q))
+
+    assert route("news happy") == route("good news") == route("happynews") == "happy_news"
+    for q in ("news us", "us news", "news world", "tech news", "news war", "news about bitcoin"):
+        assert route(q) == "news_on", q
+    assert route("news") == "news"
+    assert command("!news us") == "news us"

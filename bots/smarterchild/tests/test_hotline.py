@@ -150,7 +150,7 @@ def test_hub_chat_answers_only_when_addressed(mock_server, tmp_path):
         sc = next(uid for uid, n in users.items() if n == "SmarterChild")
         pat.send_private(sc, "where are you from?")
         d = await asyncio.wait_for(got.get(), 6)
-        assert d["name"] == "SmarterChild" and "robot" in d["text"].lower()
+        assert d["name"] == "SmarterChild" and "chatterbot" in d["text"].lower()
         await pat.close()
         await hub.client.close()
         task.cancel()

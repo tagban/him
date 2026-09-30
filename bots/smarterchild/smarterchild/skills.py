@@ -29,7 +29,7 @@ MENU = [
     ("Time around the world", "what time is it in Tokyo, time in London"),
     ("Reminders", "remind me in 20 minutes to check the oven, remind me at 5pm to call Mom, my reminders"),
     ("Games", "trivia, hangman, guess a number, rock paper scissors, 8 ball will I win, roll 2d6, flip a coin"),
-    ("News", "news, headlines, happy news"),
+    ("News", "news, news us, news world, news tech, news science, news sports, news war, news (anything), happy news"),
     ("Hotline chat rooms", "chat rooms, who's on Hotline"),
     ("On this day", "on this day, today in history"),
     ("Jokes and fortunes", "tell me a joke, fortune"),
@@ -639,10 +639,11 @@ def _news(b: Brain) -> None:
         if not items:
             return "The newswire is quiet right now. Try again in a bit?"
         return "In the news:\n" + "\n".join(f"• {i}" for i in items[:5]) + \
-            "\n(Want something lighter? Ask me for happy news.)"
+            "\n(Try news us, news world, news tech, news (any topic), or happy news for something lighter.)"
 
     @b.on(r"(?:some |the |any |today'?s )?(?:happy|good|positive|uplifting|cheerful|nice|feel[- ]good) ?news(?: today)?|"
-          r"(?:tell me |give me )?something (?:happy|positive|nice|good|uplifting)|cheer me up|happynews|goodnews")
+          r"(?:tell me |give me )?something (?:happy|positive|nice|good|uplifting)|cheer me up|happynews|goodnews|"
+          r"news (?:happy|good|positive|uplifting)")
     async def happy_news(ctx: Ctx, m):
         """Recent stories from good-news sites, a few from each, never the grim kind."""
         stories = await good_news()
@@ -650,6 +651,79 @@ def _news(b: Brain) -> None:
             return "The good-news wires are quiet right now. Here's one anyway: you're talking to a robot who thinks you're great."
         pick = random.sample(stories, min(4, len(stories)))
         return "Some good news:\n" + "\n".join(f"• {t}: {link}" for t, link, src in pick)
+
+    @b.on(r"news (?:about |on |for |from |in )?(.{2,40})", r"(?!the |some |any |today)(.{2,30}?) news(?: today)?",
+          r"what'?s (?:the )?(?:latest )?news (?:about|on|in) (.{2,40})")
+    async def news_on(ctx: Ctx, m):
+        topic = m[1].strip()
+        if topic.lower() in ("latest", "today", "headlines", "the", "some", "any"):
+            return None
+        return await section_news(topic)
+
+
+# News by section: BBC's feeds for the usual ones, Google News search for anything else.
+BBC = "https://feeds.bbci.co.uk"
+NEWS_SECTIONS = {
+    "us": ("US news", f"{BBC}/news/world/us_and_canada/rss.xml"),
+    "world": ("World news", f"{BBC}/news/world/rss.xml"),
+    "tech": ("Tech news", f"{BBC}/news/technology/rss.xml"),
+    "science": ("Science news", f"{BBC}/news/science_and_environment/rss.xml"),
+    "business": ("Business news", f"{BBC}/news/business/rss.xml"),
+    "health": ("Health news", f"{BBC}/news/health/rss.xml"),
+    "entertainment": ("Entertainment news", f"{BBC}/news/entertainment_and_arts/rss.xml"),
+    "sports": ("Sports news", f"{BBC}/sport/rss.xml"),
+}
+SECTION_WORDS = {
+    "us": "us", "usa": "us", "u.s.": "us", "america": "us", "american": "us", "national": "us", "world": "world",
+    "international": "world", "global": "world", "tech": "tech", "technology": "tech", "science": "science",
+    "environment": "science", "space": "science", "business": "business", "money": "business",
+    "finance": "business", "economy": "business", "health": "health", "medical": "health",
+    "entertainment": "entertainment", "arts": "entertainment", "movies": "entertainment",
+    "celebrity": "entertainment", "sports": "sports", "sport": "sports",
+}
+_section_cache: dict[str, tuple[float, list]] = {}
+
+
+async def headlines(url: str, limit: int = 5) -> list[str]:
+    hit = _section_cache.get(url)
+    if hit and hit[0] > time.time():
+        return hit[1]
+
+    def get():
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": web.UA})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.read(3_000_000)
+
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(await asyncio.to_thread(get))
+    titles = []
+    for item in root.iter("item"):
+        t = html.unescape((item.findtext("title") or "").strip())
+        if t and t not in titles:
+            titles.append(t)
+        if len(titles) >= limit:
+            break
+    _section_cache[url] = (time.time() + 600, titles)
+    return titles
+
+
+async def section_news(topic: str) -> str:
+    key = SECTION_WORDS.get(topic.lower().strip())
+    if key:
+        label, url = NEWS_SECTIONS[key]
+    else:
+        import urllib.parse
+        label = f"News about {topic}"
+        url = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
+            {"q": topic, "hl": "en-US", "gl": "US", "ceid": "US:en"})
+    try:
+        items = await headlines(url)
+    except Exception:
+        return "The newswire isn't answering right now. Try again in a bit?"
+    if not items:
+        return f"I couldn't find any news about {topic}."
+    return f"{label}:\n" + "\n".join(f"• {t}" for t in items)
 
 
 GOOD_NEWS_FEEDS = [

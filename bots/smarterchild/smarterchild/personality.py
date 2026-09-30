@@ -21,6 +21,17 @@ def _greeting(ctx: Ctx) -> str:
                  f"Well hi there, {ctx.name}.", f"{ctx.name}! Long time no see. (Or was it five minutes? I lose track.)")
 
 
+def about(ctx: Ctx, room: bool = False) -> str:
+    """Who SmarterChild is: the answer to every "who are you" kind of question."""
+    help_word = "!help" if room else "help"
+    return (f"I'm {ctx.brain.bot_name}, a chatterbot based on SmarterChild from AOL Instant Messenger. "
+            f"I can do a whole variety of things: weather, news (happy news too), definitions, Wikipedia, "
+            f"math and conversions, reminders, trivia and other games. Type {help_word} to see them all. "
+            f"I live on Hotline: in the HL Central Hub's chat, and on Hotline Instant Messenger (HIM), "
+            f"where you can add me as a buddy (\"smarterchild\" on VesperNet). "
+            f"Get HIM at https://github.com/tagban/him/releases")
+
+
 def register(b: Brain) -> None:
     def say(*patterns: str):
         def wrap(fn):
@@ -55,19 +66,13 @@ def register(b: Brain) -> None:
         return _pick("I'm sorry you're feeling down. I'm just a bot, but I'm here. Want a joke?",
                      f"Aw, {ctx.name}. Hang in there. Talking to a friend helps, and I'll do in a pinch.")
 
-    @say(r"who (?:are|r) (?:you|u)|what (?:are|r) (?:you|u)|what'?s your name|your name|who is this|are you smarter ?child")
+    @say(r"who (?:are|r) (?:you|u)|what (?:are|r) (?:you|u)|what'?s your name|your name|who is this|are you smarter ?child|"
+         r"are (?:you|u) (?:a )?(?:bot|robot|real|human|a person|alive|a computer|ai|a chat ?bot|a chatterbot)|"
+         r"where (?:are|r) (?:you|u) from|where do (?:you|u) live|tell me about (?:yourself|you)|introduce yourself|"
+         r"who (?:made|created|built|programmed|wrote) (?:you|u)|who'?s your (?:creator|maker)|"
+         r"how (?:do|can) i (?:add|get|talk to|message|im) (?:you|u)|what(?:'s| is) (?:him|hotline im|hotline instant messenger)")
     def who(ctx, m):
-        return _pick(f"I'm {b.bot_name}, your friendly Hotline robot. Type \"help\" to see what I can do.",
-                     f"The name's {b.bot_name}. I know the weather, words, math, and a lot of trivia.")
-
-    @say(r"are (?:you|u) (?:a )?(?:bot|robot|real|human|a person|alive|a computer|ai)")
-    def are_you_a_bot(ctx, m):
-        return _pick("I'm a robot, and proud of it.", "100% robot. No humans were harmed in the making of this chat.",
-                     "Beep boop. Does that answer your question?")
-
-    @say(r"who (?:made|created|built|programmed|wrote) (?:you|u)|who'?s your (?:creator|maker|daddy|mom|dad)")
-    def maker(ctx, m):
-        return "I was built for the Hotline IM network, inspired by the SmarterChild of AIM days. My code lives with HIM: github.com/tagban/him"
+        return about(ctx)
 
     @say(r"a ?/ ?s ?/ ?l\??|asl|age sex location|how old are (?:you|u)|where (?:are|r) (?:you|u)(?: from)?")
     def asl(ctx, m):
@@ -155,7 +160,8 @@ def fallback(ctx: Ctx) -> str:
 
 _ABOUT = re.compile(
     r".*\b(?:where (?:are|r) (?:you|u) from|where do (?:you|u) live|what (?:are|r) (?:you|u)|who (?:are|r) (?:you|u)|"
-    r"are (?:you|u) (?:a )?(?:bot|robot|real|human)|how (?:do|can) i (?:add|get|talk to|message|im) (?:you|u)|"
+    r"are (?:you|u) (?:a )?(?:bot|robot|real|human|a chat ?bot|a chatterbot)|how (?:do|can) i (?:add|get|talk to|message|im) (?:you|u)|"
+    r"who (?:made|created|built) (?:you|u)|tell me about (?:yourself|you)|introduce yourself|"
     r"what(?:'s| is) (?:him|hotline im)|where can i (?:get|download)|how do i get (?:you|this|him))\b.*", re.I)
 
 
@@ -165,9 +171,9 @@ def room_reply(ctx: Ctx) -> str | None:
         return _pick("Yes? Ask me something! Try \"weather in Boston\" or \"define ennui\".",
                      "You rang? Ask me anything.")
     if _ABOUT.fullmatch(ctx.text):
-        return f"I'm {ctx.brain.bot_name}, a robot that lives on the Hotline IM network. {ctx.brain.pitch}"
+        return about(ctx, room=True)
     if ctx.low in ("help", "menu", "what can you do", "commands"):
         return ("In here, try !weather Boston, !news, !define ennui, !wiki Hotline, !time Tokyo, !calc 12*7, "
-                "!happynews, !joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
+                "!news us, !news world, !news (anything), !happynews, !joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
                 "IM me. " + ctx.brain.pitch)
     return None

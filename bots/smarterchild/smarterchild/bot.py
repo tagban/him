@@ -13,6 +13,7 @@ And in a server's public chat (leave HUB_HOST empty to stay out of chat):
   HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500
   HUB_LOGIN, HUB_PASSWORD an account there, or empty to join as a guest
   HUB_ICON                the classic user icon, default 168 (the robot)
+  HUB_TRIGGER             what starts a chat command, default ! (as in !weather Boston)
 """
 
 from __future__ import annotations
@@ -99,7 +100,8 @@ class Bot:
             c.typing(m.sender, True)
             started = time.time()
             try:
-                replies = await self.brain.answer(m.sender, m.body)
+                from .hub import command  # "!weather Boston" works in IM too, out of habit
+                replies = await self.brain.answer(m.sender, command(m.body.strip()) or m.body)
             except Exception:
                 log.exception("answering %s", m.sender)
                 replies = ["Oops, something went wrong in my circuits. Try that again?"]
@@ -203,7 +205,7 @@ def main() -> None:
         from .hub import Hub
         hub = Hub(bot.brain, os.environ["HUB_HOST"], int(os.environ.get("HUB_PORT", "5500")), bot.name,
                   int(os.environ.get("HUB_ICON", "168")), os.environ.get("HUB_LOGIN", ""),
-                  os.environ.get("HUB_PASSWORD", ""))
+                  os.environ.get("HUB_PASSWORD", ""), os.environ.get("HUB_TRIGGER", "!"))
 
     async def both():
         await asyncio.gather(bot.run(), *([hub.run()] if hub else []))

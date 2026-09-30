@@ -1,8 +1,11 @@
 """SmarterChild in a Hotline server's public chat (the Hotline Central Hub, say).
 
-It speaks only when spoken to: a chat line that starts or ends with its name
-("SmarterChild, weather in Boston" / "what's 6*7, smarterchild?"). Private messages
-sent to it on that server are answered like IMs. Everyone else's chat is ignored.
+It speaks only when spoken to:
+- a `!` command: "!weather Boston", "!news", "!define ennui", "!joke", "!help";
+- a line that starts or ends with its name ("SmarterChild, what's 6*7?");
+- the weather for a named place ("weather in Boston"), which is rarely just chatter.
+Private messages sent to it on that server are answered like IMs. Everything else
+said in the room is left alone.
 """
 
 from __future__ import annotations
@@ -23,6 +26,33 @@ log = logging.getLogger("hub")
 CHAT_LINE = re.compile(r"^\s*(.{1,31}?):\s+(.*)$", re.S)
 
 
+# "!w Boston" and friends: short command names for what the brain already understands.
+COMMANDS = {
+    "w": "weather", "wx": "weather", "forecast": "weather", "d": "define", "def": "define", "dict": "define",
+    "wiki": "tell me about", "wp": "tell me about", "whois": "who is", "t": "time in", "time": "time in",
+    "calc": "", "math": "", "c": "", "8ball": "8 ball", "8": "8 ball", "otd": "on this day",
+    "history": "on this day", "rooms": "chat rooms", "servers": "chat rooms", "headlines": "news",
+    "sc": "", "smarterchild": "", "help": "help", "commands": "help", "about": "who are you",
+}
+NATURAL = re.compile(r"(?:what'?s |how'?s )?(?:the )?(?:weather|forecast)(?: like)? (?:in|for|at) .{2,60}", re.I)
+
+
+def command(text: str, trigger: str = "!") -> str | None:
+    """The question in a "!command args" line, with short names spelled out; else None."""
+    if not trigger or not text.startswith(trigger) or len(text) <= len(trigger):
+        return None
+    word, _, rest = text[len(trigger):].strip().partition(" ")
+    if not word:
+        return None
+    w = word.lower()
+    if w in COMMANDS:
+        head = COMMANDS[w]
+        if w in ("time", "t") and not rest:
+            return "what time is it"
+        return f"{head} {rest}".strip() or "help"
+    return f"{word} {rest}".strip()
+
+
 def addressed(text: str, names: list[str]) -> str | None:
     """What was asked, when a line starts or ends with one of our names; else None."""
     alt = "|".join(re.escape(n) for n in names)
@@ -33,9 +63,10 @@ def addressed(text: str, names: list[str]) -> str | None:
 
 class Hub:
     def __init__(self, brain: Brain, host: str, port: int, name: str, icon: int,
-                 login: str = "", password: str = ""):
+                 login: str = "", password: str = "", trigger: str = "!"):
         self.brain, self.host, self.port = brain, host, port
         self.name, self.icon, self.login, self.password = name, icon, login, password
+        self.trigger = trigger
         self.names = sorted({name, name.replace(" ", ""), "smarterchild", "smarter child"}, key=len, reverse=True)
         self.client: Client | None = None
         self.sent: deque = deque()  # times of our recent chat lines
@@ -54,7 +85,8 @@ class Hub:
         return True
 
     async def on_event(self, kind: str, data: dict) -> None:
-        if kind == "chat" and data.get("chat_id") is None:
+        # The public chat, whether or not the server puts a Chat ID on it (we join no private chats).
+        if kind == "chat":
             asyncio.create_task(self.on_chat(data["text"]))
         elif kind == "private":
             asyncio.create_task(self.on_private(data["id"], data["name"], data["text"]))
@@ -67,8 +99,15 @@ class Hub:
         who, text = m[1].strip(), m[2].strip()
         if who.lower() in (n.lower() for n in self.names):
             return  # ourselves
-        q = addressed(text, self.names)
-        if q is None or not self._room_ok(who):
+        q = command(text, self.trigger)
+        if q is None:
+            q = addressed(text, self.names)
+        if q is None and NATURAL.fullmatch(text.rstrip("?!. ")):
+            q = text
+        if q is None:
+            return
+        if not self._room_ok(who):
+            log.info("chat %s: rate limited", who)
             return
         assert self.client
         await asyncio.sleep(random.uniform(0.7, 1.6))
@@ -82,7 +121,7 @@ class Hub:
 
     async def on_private(self, uid: int, who: str, text: str) -> None:
         assert self.client
-        replies = await self.brain.answer(f"hub:{who}", text)
+        replies = await self.brain.answer(f"hub:{who}", command(text.strip(), self.trigger) or text)
         for i, r in enumerate(replies):
             if i:
                 await asyncio.sleep(0.8)

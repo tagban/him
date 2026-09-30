@@ -22,6 +22,7 @@ Type **help** for the numbered menu. Some things to try:
 | Time | `what time is it in Tokyo`, `what's the date` |
 | Reminders | `remind me in 20 minutes to check the oven`, `remind me at 5pm to call Mom`, `my reminders` |
 | Games | `trivia`, `hangman`, `guess a number`, `rock paper scissors`, `8 ball will I win`, `roll 2d6`, `flip a coin` |
+| News | `news`, `headlines` (from Wikipedia's In the news) |
 | Hotline | `chat rooms` (the busiest servers, from the trackers) |
 | Fun | `tell me a joke`, `fortune`, `on this day`, `fun fact` |
 | About you | `my name is Sam`, `what's my name`, `remember my favorite band is Weezer`, `what do you know about me`, `forget me` |
@@ -30,10 +31,18 @@ And small talk, with some attitude.
 
 Reminders are sent as IMs, so they wait on the server if you're offline.
 
-In **public chat** it answers lines that start or end with its name
-(`SmarterChild, weather in Austin`, `what's 6*7, smarterchild?`). Answers are kept
-to a few lines; games and follow-ups are for IM. Private messages sent to it there
-are answered like IMs.
+In IM you just talk to it. In a **public chat**, where everyone shares one room, it
+answers only:
+
+- `!` commands: `!weather Boston` (`!w`), `!news`, `!define ennui` (`!d`), `!wiki Hotline`,
+  `!time Tokyo`, `!calc 12*7`, `!joke`, `!fact`, `!rooms`, `!otd`, `!8ball will it work`,
+  `!roll 2d6`, `!help`, or any question after a `!`;
+- lines that start or end with its name (`SmarterChild, what's 6*7?`);
+- the weather for a named place (`weather in Austin`).
+
+Answers there are kept to a few lines; games and follow-ups are for IM. Private
+messages sent to it in a server's chat are answered like IMs, and `!` works in IM
+too for anyone used to it.
 
 ### Free services it uses
 
@@ -75,6 +84,7 @@ What it remembers (names, places, facts, trivia scores, reminders) is kept as JS
 | `HUB_HOST`, `HUB_PORT` | none, `5500` | A server whose public chat to join; empty stays out |
 | `HUB_LOGIN`, `HUB_PASSWORD` | guest | An account there, if guests can't chat |
 | `HUB_ICON` | `168` | Its classic user icon |
+| `HUB_TRIGGER` | `!` | What starts a chat command |
 
 It signs on with HOPE (HMAC-SHA256) and encrypts the session with ChaCha20-Poly1305
 when the server agrees, the same as HIM. `smarterchild/hotline.py` is a small

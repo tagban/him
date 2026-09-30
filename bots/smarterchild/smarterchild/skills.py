@@ -29,6 +29,7 @@ MENU = [
     ("Time around the world", "what time is it in Tokyo, time in London"),
     ("Reminders", "remind me in 20 minutes to check the oven, remind me at 5pm to call Mom, my reminders"),
     ("Games", "trivia, hangman, guess a number, rock paper scissors, 8 ball will I win, roll 2d6, flip a coin"),
+    ("News", "news, headlines"),
     ("Hotline chat rooms", "chat rooms, who's on Hotline"),
     ("On this day", "on this day, today in history"),
     ("Jokes and fortunes", "tell me a joke, fortune"),
@@ -75,6 +76,7 @@ def register(b: Brain) -> None:
     _define(b)
     _games(b)
     _jokes(b)
+    _news(b)
     _rooms(b)
     _on_this_day(b)
     from . import personality
@@ -593,6 +595,30 @@ def _on_this_day(b: Brain) -> None:
             return "Nothing happened today, apparently. Ever."
         return f"On this day ({now:%B} {now.day}):\n" + "\n".join(
             f"{e['year']}: {e['text']}" for e in sorted(events, key=lambda e: e["year"]))
+
+
+# ---------- news ----------
+
+def _news(b: Brain) -> None:
+    @b.on(r"(?:the |today'?s |latest |world )?(?:news|headlines)(?: today)?|what'?s (?:in the news|going on in the world|happening in the world)|current events")
+    async def news(ctx: Ctx, m):
+        """World headlines from Wikipedia's "In the news": short, sourced and neutral."""
+        now = datetime.utcnow()
+        items = []
+        for back in (0, 1):  # today's feed can be empty early in the (UTC) day
+            d = now - timedelta(days=back)
+            try:
+                feed = await web.get_json(
+                    f"https://api.wikimedia.org/feed/v1/wikipedia/en/featured/{d:%Y/%m/%d}", ttl=1800)
+            except Exception:
+                continue
+            items = [_plain(re.sub(r"<!--.*?-->", "", n.get("story", ""))) for n in feed.get("news", [])]
+            items = [i for i in items if i]
+            if items:
+                break
+        if not items:
+            return "The newswire is quiet right now. Try again in a bit?"
+        return "In the news:\n" + "\n".join(f"• {i}" for i in items[:5])
 
 
 # ---------- Hotline chat rooms ----------

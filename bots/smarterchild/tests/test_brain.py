@@ -108,3 +108,48 @@ def test_in_a_room_it_points_to_him_and_keeps_games_for_im(brain):
     assert "hub:pat" not in brain.modes
     out = asyncio.run(brain.answer("hub:sam", "what is 6*7", room=True))
     assert out == ["6*7 = 42"]  # no introduction in a room
+
+
+def test_hub_commands_and_triggers(tmp_path):
+    from smarterchild.hub import Hub, command
+
+    assert command("!weather Boston") == "weather Boston"
+    assert command("!w Boston") == "weather Boston"
+    assert command("!news") == "news"
+    assert command("!time") == "what time is it"
+    assert command("!time Tokyo") == "time in Tokyo"
+    assert command("!calc 12*7") == "12*7"
+    assert command("!who is Ada Lovelace") == "who is Ada Lovelace"
+    assert command("!") is None and command("hello") is None
+
+    class FakeClient:
+        max_message_bytes = 4096
+        def __init__(self):
+            self.said = []
+        def send_chat(self, text, emote=False):
+            self.said.append(text)
+
+    hub = Hub(Brain(tmp_path), "x", 5500, "SmarterChild", 168)
+    hub.client = FakeClient()
+
+    async def hear(line):
+        # the Hub sends a Chat ID with public chat, as the protocol allows
+        await hub.on_event("chat", {"text": "\r" + line, "chat_id": 0})
+        await asyncio.sleep(0)
+        for t in list(asyncio.all_tasks()):
+            if t is not asyncio.current_task():
+                await t
+
+    async def run():
+        await hear("          Pat:  !calc 6*7")
+        await hear("          Pat:  nice weather we're having")
+        await hear("          Sam:  smarterchild, what's 2+2")
+        await hear("  SmarterChild:  Pat: talking to myself")
+        await hear("          Pat:  !help")
+
+    asyncio.run(run())
+    said = hub.client.said
+    assert said[0] == "Pat: 6*7 = 42"
+    assert said[1] == "Sam: 2+2 = 4"
+    assert "!weather" in said[2]
+    assert len(said) == 3

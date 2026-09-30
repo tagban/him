@@ -40,7 +40,9 @@ answers only:
 - lines that start or end with its name (`SmarterChild, what's 6*7?`);
 - the weather for a named place (`weather in Austin`).
 
-Answers there are kept to a few lines; games and follow-ups are for IM. Private
+People on Discord count too: lines the
+[Discord bridge](https://github.com/tagban/hotline_discord_bridge) posts for them
+(`Discord | Name: !weather Boston`) are answered as theirs. Answers there are kept to a few lines; games and follow-ups are for IM. Private
 messages sent to it in a server's chat are answered like IMs, and `!` works in IM
 too for anyone used to it.
 

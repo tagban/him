@@ -140,6 +140,11 @@ def test_hub_chat_answers_only_when_addressed(mock_server, tmp_path):
                 break
         assert not any("SmarterChild:" in l and "nice weather" in l for l in lines[1:])
         assert "Pat: 6*7 = 42" in lines[-1]
+        # someone on Discord, through the bridge
+        pat.send_chat("Discord | Sam: !calc 6*6")
+        while "36" not in (t := await asyncio.wait_for(heard.get(), 6)):
+            pass
+        assert "Sam: 6*6 = 36" in t
         # a private message is answered privately
         got: asyncio.Queue = asyncio.Queue()
 

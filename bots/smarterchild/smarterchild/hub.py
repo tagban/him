@@ -4,6 +4,7 @@ It speaks only when spoken to:
 - a `!` command: "!weather Boston", "!news", "!define ennui", "!joke", "!help";
 - a line that starts or ends with its name ("SmarterChild, what's 6*7?");
 - the weather for a named place ("weather in Boston"), which is rarely just chatter.
+Lines a relay posts for people on Discord ("Discord | Name: !weather Boston") count as theirs.
 Private messages sent to it on that server are answered like IMs. Everything else
 said in the room is left alone.
 """
@@ -38,6 +39,8 @@ COMMANDS = {
     "city": "city", "place": "city", "town": "city", "where": "city",
     "score": "trivia score", "top": "leaderboard", "leaderboard": "leaderboard", "trivia": "trivia",
 }
+# A relay speaking for someone elsewhere, like the Discord bridge: "Discord | Name: message".
+RELAYED = re.compile(r"^(Discord|Web)\s*\|\s*(.{1,40}?):\s+(.*)$", re.S)
 NATURAL = re.compile(r"(?:what'?s |how'?s )?(?:the )?(?:weather|forecast)(?: like)? (?:in|for|at) .{2,60}", re.I)
 
 
@@ -103,6 +106,11 @@ class Hub:
         who, text = m[1].strip(), m[2].strip()
         if who.lower() in (n.lower() for n in self.names):
             return  # ourselves
+        key = f"hub:{who}"
+        r = RELAYED.match(text)
+        if r:  # answer the person on Discord, not the relay
+            who, text = r[2].strip(), r[3].strip()
+            key = f"{r[1].lower()}:{who}"
         q = command(text, self.trigger)
         if q is None:
             q = addressed(text, self.names)
@@ -110,12 +118,12 @@ class Hub:
             q = text
         if q is None:
             return
-        if not self._room_ok(who):
+        if not self._room_ok(key):
             log.info("chat %s: rate limited", who)
             return
         assert self.client
         await asyncio.sleep(random.uniform(0.7, 1.6))
-        replies = await self.brain.answer(f"hub:{who}", q, room=True)
+        replies = await self.brain.answer(key, q, room=True)
         lines = "\n".join(replies).split("\n")
         if len(lines) > 5:
             lines = lines[:4] + ["(There's more: IM me for the rest.)"]

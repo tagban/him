@@ -119,7 +119,7 @@ class Hub:
         if q is None:
             return
         if not self._room_ok(key):
-            log.info("chat %s: rate limited", who)
+            log.info("chat %s %s: rate limited", self.host, who)
             return
         assert self.client
         await asyncio.sleep(random.uniform(0.7, 1.6))
@@ -129,7 +129,7 @@ class Hub:
             lines = lines[:4] + ["(There's more: IM me for the rest.)"]
         text = f"{who}: " + "\r".join(lines)
         self.client.send_chat(text[: self.client.max_message_bytes or 4000])
-        log.info("chat %s: %r", who, q[:60])
+        log.info("chat %s %s: %r", self.host, who, q[:60])
 
     async def on_private(self, uid: int, who: str, text: str) -> None:
         assert self.client
@@ -151,7 +151,7 @@ class Hub:
         except HotlineError:
             pass
         await c.closed.wait()
-        log.warning("left %s: %s", self.host, c.close_reason)
+        log.warning("left %s: %s", c.server_name or self.host, c.close_reason)
 
     async def run(self) -> None:
         wait = 15
@@ -160,9 +160,9 @@ class Hub:
             try:
                 await self.session()
             except (HotlineError, OSError, asyncio.TimeoutError) as e:
-                log.error("hub: %s", e)
+                log.error("hub %s: %s", self.host, e)
             except Exception:
-                log.exception("hub: unexpected error")
+                log.exception("hub %s: unexpected error", self.host)
             if time.time() - start > 600:
                 wait = 15
             await asyncio.sleep(wait + random.random() * 5)

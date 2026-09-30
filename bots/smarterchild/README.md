@@ -83,7 +83,7 @@ What it remembers (names, places, facts, trivia scores, reminders) is kept as JS
 | `SMARTERCHILD_NAME` | `SmarterChild` | The name buddies see (set on every sign-on) |
 | `SMARTERCHILD_STATUS` | `Ask me anything! Type "help".` | Its status line |
 | `SMARTERCHILD_DATA` | `data` | Where it keeps what it remembers |
-| `HUB_HOST`, `HUB_PORT` | none, `5500` | A server whose public chat to join; empty stays out |
+| `HUB_HOST`, `HUB_PORT` | none, `5500` | Servers whose public chat to join, comma-separated (`host` or `host:port`); empty stays out |
 | `HUB_LOGIN`, `HUB_PASSWORD` | guest | An account there, if guests can't chat |
 | `HUB_ICON` | `168` | Its classic user icon |
 | `HUB_TRIGGER` | `!` | What starts a chat command |

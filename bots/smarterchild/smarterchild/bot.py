@@ -10,8 +10,9 @@ Settings come from the environment (or a .env file beside the data folder):
   SMARTERCHILD_DATA       where memory and reminders are kept, default ./data
 
 And in a server's public chat (leave HUB_HOST empty to stay out of chat):
-  HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500
-  HUB_LOGIN, HUB_PASSWORD an account there, or empty to join as a guest
+  HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500. Several
+                          servers: comma-separated, each host or host:port
+  HUB_LOGIN, HUB_PASSWORD an account there (on each, with several), or empty to join as a guest
   HUB_ICON                the classic user icon, default 168 (the robot)
   HUB_TRIGGER             what starts a chat command, default ! (as in !weather Boston)
 """
@@ -200,15 +201,16 @@ def main() -> None:
     bot = Bot(os.environ.get("HOTLINE_HOST", "hotline.vespernet.net"), int(os.environ.get("HOTLINE_PORT", "5500")),
               login, password, os.environ.get("SMARTERCHILD_NAME", "SmarterChild"),
               os.environ.get("SMARTERCHILD_STATUS", 'Ask me anything! Type "help".'), data)
-    hub = None
-    if os.environ.get("HUB_HOST"):
+    hubs = []
+    for entry in filter(None, (h.strip() for h in os.environ.get("HUB_HOST", "").split(","))):
         from .hub import Hub
-        hub = Hub(bot.brain, os.environ["HUB_HOST"], int(os.environ.get("HUB_PORT", "5500")), bot.name,
-                  int(os.environ.get("HUB_ICON", "168")), os.environ.get("HUB_LOGIN", ""),
-                  os.environ.get("HUB_PASSWORD", ""), os.environ.get("HUB_TRIGGER", "!"))
+        host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
+        hubs.append(Hub(bot.brain, host, int(port or os.environ.get("HUB_PORT", "5500")), bot.name,
+                        int(os.environ.get("HUB_ICON", "168")), os.environ.get("HUB_LOGIN", ""),
+                        os.environ.get("HUB_PASSWORD", ""), os.environ.get("HUB_TRIGGER", "!")))
 
     async def both():
-        await asyncio.gather(bot.run(), *([hub.run()] if hub else []))
+        await asyncio.gather(bot.run(), *(h.run() for h in hubs))
 
     try:
         asyncio.run(both())

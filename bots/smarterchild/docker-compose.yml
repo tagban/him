@@ -1,0 +1,9 @@
+# SmarterChild on a server: `docker compose up -d --build`, logs with `docker compose logs -f`.
+# Put the password in .env beside this file (see .env.example); it never goes in git.
+services:
+  smarterchild:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/data

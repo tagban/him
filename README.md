@@ -39,6 +39,13 @@ On VesperNet:
 
 macOS first; Windows and Linux later (it's Tauri, so they're mostly a build away).
 
+## SmarterChild
+
+Add **smarterchild** on VesperNet for a buddy who answers back: weather, definitions,
+Wikipedia, math, reminders, trivia and more, in the spirit of AIM's SmarterChild. It's
+in [bots/smarterchild](bots/smarterchild), with a small Python client for the Hotline
+IM protocol that other bots can reuse.
+
 ## Download
 
 From [Releases](https://github.com/tagban/him/releases):

@@ -12,6 +12,7 @@ pub mod tx {
     pub const SERVER_MSG: u16 = 104;
     pub const SEND_CHAT: u16 = 105;
     pub const CHAT_MSG: u16 = 106;
+    pub const SEND_INSTANT_MSG: u16 = 108;
     pub const GET_USER_NAME_LIST: u16 = 300;
     pub const NOTIFY_CHANGE_USER: u16 = 301;
     pub const NOTIFY_DELETE_USER: u16 = 302;

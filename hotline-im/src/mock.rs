@@ -718,6 +718,26 @@ impl MockServer {
                 );
                 None
             }
+            tx::SEND_INSTANT_MSG => {
+                // A classic private message: delivered as Server Message (104) naming the sender.
+                let from = st.sessions.get(&sid)?;
+                let to = t.uint(field::USER_ID).unwrap_or(0);
+                let msg = notify(
+                    tx::SERVER_MSG,
+                    vec![
+                        Field::int(field::USER_ID, sid as u32),
+                        Field::new(field::USER_NAME, from.name.clone()),
+                        Field::new(field::DATA, t.bytes(field::DATA).unwrap_or_default().to_vec()),
+                    ],
+                );
+                match st.sessions.get(&to).filter(|s| s.visible()) {
+                    Some(dest) => {
+                        let _ = dest.tx.send(msg);
+                        Some(Transaction::reply_to(t, vec![]))
+                    }
+                    None => Some(fail(t, 0, "That user isn't here.")),
+                }
+            }
             tx::GET_USER_NAME_LIST => {
                 let mut ids: Vec<_> = st
                     .sessions

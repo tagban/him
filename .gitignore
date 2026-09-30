@@ -2,3 +2,10 @@ target/
 src-tauri/gen/
 .DS_Store
 third_party/
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+bots/smarterchild/data/
+bots/smarterchild/.env

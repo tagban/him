@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Find a Buddy</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .results { flex: 1; min-height: 0; }
+  .results div { padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .results div.sel { background: var(--select); color: #fff; }
+  .results .none { color: #707070; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="hint">Search the server's directory by screen name or name. Only people who chose to be listed show up.</div>
+    <div class="row"><input type="text" id="q" spellcheck="false" placeholder="Name or screen name"><button id="go" style="min-width:60px">Search</button></div>
+    <div class="pane results" id="res"></div>
+    <div class="hint" id="more" style="font-size:10px"></div>
+    <div class="buttons"><button class="default" id="add" disabled>Add Buddy</button><button id="close">Close</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Find a Buddy', minimize: false });
+  let rows = [], pick = null;
+  $('#q').focus();
+  async function search() {
+    const q = $('#q').value.trim();
+    if (!q) return;
+    $('#res').innerHTML = '<div class="none">Searching...</div>';
+    try {
+      rows = await invoke('search_users', { query: q });
+      pick = null;
+      $('#add').disabled = true;
+      $('#res').innerHTML = rows.length ? rows.map(([l, n], i) => `<div data-i="${i}">${esc(n || l)}${n && n !== l ? ` <span style="opacity:.6">(${esc(l)})</span>` : ''}</div>`).join('') : '<div class="none">No matches.</div>';
+      $('#more').textContent = rows.length >= 50 ? 'Showing the first matches; try a longer search to narrow it.' : '';
+      $$('#res div[data-i]').forEach(d => {
+        d.onclick = () => { $$('#res div').forEach(x => x.classList.remove('sel')); d.classList.add('sel'); pick = rows[d.dataset.i][0]; $('#add').disabled = false; };
+        d.ondblclick = () => $('#add').click();
+      });
+    } catch (e) { $('#res').innerHTML = `<div class="none">${esc(String(e))}</div>`; }
+  }
+  $('#go').onclick = search;
+  $('#q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+  $('#add').onclick = () => { if (pick) { invoke('open_dialog', { kind: 'addbuddy', arg: 'login:' + pick }); } };
+  $('#close').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

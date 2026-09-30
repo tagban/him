@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Instant Message</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .convo { flex: 1; min-height: 60px; padding: 4px 5px; font-family: Arial, Helvetica, sans-serif; font-size: 12px; -webkit-user-select: text; user-select: text; cursor: text; line-height: 1.3; }
+  .convo .ln { margin: 0 0 1px; white-space: pre-wrap; word-wrap: break-word; }
+  .convo .who { font-weight: bold; }
+  .convo .me { color: var(--me); }
+  .convo .them { color: var(--them); }
+  .convo .ts { color: #808080; font-size: 0.85em; }
+  .convo .sys { color: #707070; font-style: italic; }
+  .convo .auto { color: #505050; }
+  .convo .mark { color: #909090; font-size: 0.8em; margin-left: 4px; }
+  .convo .failed { color: #c00000; font-size: 0.85em; margin-left: 4px; }
+  .fmt { flex: none; display: flex; gap: 1px; padding: 3px 0 2px; align-items: center; }
+  .fmt button { min-width: 0; width: 24px; height: 22px; padding: 0; font-family: "Times New Roman", serif; font-weight: bold; box-shadow: none; }
+  .fmt button:hover { box-shadow: inset -1px -1px var(--shadow), inset 1px 1px var(--hilite); }
+  .fmt button:active { box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow); }
+  .fmt .sep { width: 2px; height: 18px; margin: 0 3px; border-left: 1px solid var(--shadow); border-right: 1px solid var(--hilite); }
+  .fmt .count { margin-left: auto; color: #505050; font-size: 10px; padding-right: 3px; }
+  .fmt .count.over { color: #c00000; font-weight: bold; }
+  .composerow { flex: none; display: flex; gap: 4px; }
+  .entry { flex: 1; min-width: 0; height: 64px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
+  .myicon { display: none; width: 56px; height: 64px; flex: none; place-items: center; background: #fff;
+    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow), inset -2px -2px var(--light), inset 2px 2px var(--dark); }
+  .myicon.on { display: grid; }
+  .myicon img { width: 48px; height: 48px; }
+  .bottom { flex: none; display: flex; align-items: flex-end; gap: 2px; padding-top: 3px; }
+  .bottom .ibtn { width: 48px; }
+  .bottom .sendbtn { margin-left: auto; width: 56px; height: 40px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; font-weight: bold; }
+  .bottom .sendbtn svg { width: 22px; height: 22px; }
+  .smileys { position: absolute; z-index: 30; display: none; grid-template-columns: repeat(6, 26px); gap: 2px; padding: 4px; background: var(--face); box-shadow: inset -1px -1px var(--dark), inset 1px 1px var(--light), inset -2px -2px var(--shadow), inset 2px 2px var(--hilite); }
+  .smileys span { display: grid; place-items: center; height: 24px; font-size: 16px; }
+  .smileys span:hover { background: var(--select); }
+  .smileys img { width: 20px; height: 20px; }
+  .inner { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 2px 3px 0; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="menubar"></div>
+  <div class="inner">
+    <div class="pane convo" id="convo"></div>
+    <div class="fmt">
+      <button id="smaller" title="Smaller text" style="font-size:10px">A</button>
+      <button id="normal" title="Normal text" style="font-size:12px">A</button>
+      <button id="bigger" title="Bigger text" style="font-size:15px">A</button>
+      <span class="sep"></span>
+      <button id="smile" title="Insert a smiley"></button>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="composerow">
+      <div class="myicon" id="theiricon"></div>
+      <textarea class="entry" id="entry" spellcheck="true"></textarea>
+      <div class="myicon" id="myicon" title="Your Buddy Icon (My HIM > Buddy Icon)"></div>
+    </div>
+    <div class="bottom">
+      <button class="ibtn" id="b-block" title="Block this person"></button>
+      <button class="ibtn" id="b-add" title="Add to your Buddy List"></button>
+      <button class="ibtn" id="b-info" title="Get their info"></button>
+      <button class="sendbtn default" id="b-send"></button>
+    </div>
+  </div>
+  <div class="statusbar"><div id="status"></div></div>
+  <div class="smileys" id="smileys"></div>
+</div>
+<script src="common.js"></script>
+<script src="smileys.js"></script>
+<script>
+  const login = param('u');
+  let C = null;              // conversation view from the backend
+  let size = 12;
+  let typingSent = false, typingTimer = null, theirTypingTimer = null;
+  let lastStatus = '';
+
+  setupWindow({ title: `${login} - Instant Message` });
+  $('#b-block').innerHTML = ICON.block + 'Block';
+  $('#b-add').innerHTML = ICON.addbuddy + 'Add Buddy';
+  $('#b-info').innerHTML = ICON.info + 'Get Info';
+  $('#b-send').innerHTML = ICON.send + 'Send';
+
+  setupMenus([
+    { title: 'File', items: [
+      { label: 'Save Conversation...', action: saveConvo },
+      '-',
+      { label: 'Close', action: () => thisWindow.close() },
+    ]},
+    { title: 'Edit', items: [
+      { label: 'Copy', action: () => document.execCommand('copy') },
+      { label: 'Select All', action: () => { const r = document.createRange(); r.selectNodeContents($('#convo')); getSelection().removeAllRanges(); getSelection().addRange(r); } },
+      '-',
+      { label: 'Clear Window', action: () => { $('#convo').innerHTML = ''; } },
+      '-',
+      { label: 'Show Timestamps', checked: () => C?.prefs.timestamps, action: toggleTimestamps },
+    ]},
+    { title: 'People', items: [
+      { label: 'Get Info', action: () => invoke('open_dialog', { kind: 'info', arg: login }) },
+      { label: 'Add Buddy...', disabled: () => C?.buddy?.state === 'accepted', action: addBuddy },
+      { label: 'Block', action: blockThem },
+    ]},
+  ]);
+
+  function nameOf() { return C?.name || login; }
+
+  function lineHtml(l) {
+    const ts = C?.prefs.timestamps ? `<span class="ts">(${esc(fmtTime(l.ts))}) </span>` : '';
+    if (l.dir === 'system') return `<div class="ln sys">${esc(l.body)}</div>`;
+    const mine = l.dir === 'out' || l.dir === 'auto';
+    const who = mine ? (C?.me || 'Me') : nameOf();
+    const pics = C?.prefs.smileys !== false;
+    let body = Smileys.html(l.body, pics);
+    let mark = '';
+    if (mine) {
+      if (l.state === 'failed') mark = `<span class="failed" title="${esc(l.error || '')}">(not sent${l.error ? ': ' + esc(l.error) : ''})</span>`;
+      else if (l.state === 'queued') mark = `<span class="mark" title="They're offline; the server will deliver it when they sign on.">(will deliver when they sign on)</span>`;
+    }
+    const isAuto = l.dir === 'auto' || (!mine && /^Auto-response: /.test(l.body));
+    if (isAuto) body = `<span class="auto">${Smileys.html(l.body.replace(/^Auto-response: /, ''), pics)}</span>`;
+    const label = isAuto ? `Auto response from ${esc(who)}` : esc(who);
+    return `<div class="ln" data-guid="${esc(l.guid)}">${ts}<span class="who ${mine ? 'me' : 'them'}">${label}:</span> ${body}${mark}</div>`;
+  }
+
+  function atBottom() { const c = $('#convo'); return c.scrollHeight - c.scrollTop - c.clientHeight < 24; }
+  function scrollDown() { const c = $('#convo'); c.scrollTop = c.scrollHeight; }
+
+  function renderAll() {
+    $('#convo').innerHTML = (C?.lines || []).map(lineHtml).join('');
+    scrollDown();
+    applySize();
+    renderButtons();
+  }
+
+  function renderButtons() {
+    const st = C?.buddy?.state;
+    $('#b-add').disabled = st === 'accepted' || st === 'pendingOut';
+    $('#b-block').innerHTML = (st === 'blocked' ? ICON.block + 'Unblock' : ICON.block + 'Block');
+    setTitle(`${nameOf()} - Instant Message`);
+    if (!lastStatus) showPresence();
+  }
+
+  function showPresence() {
+    const b = C?.buddy;
+    let s = '';
+    if (!b || b.state !== 'accepted') s = b?.state === 'pendingOut' ? `Waiting for ${nameOf()} to accept your buddy request.` : `${nameOf()} isn't on your Buddy List.`;
+    else if (b.presence === 'offline') s = `${nameOf()} is offline. Messages will be delivered when they sign on.`;
+    else if (b.presence === 'away') s = `${nameOf()} is away${b.statusText ? ': ' + b.statusText : '.'}`;
+    else if (b.presence === 'busy') s = `${nameOf()} is busy${b.statusText ? ': ' + b.statusText : '.'}`;
+    else s = b.statusText ? `${nameOf()}: ${b.statusText}` : '';
+    $('#status').innerHTML = esc(s);
+  }
+
+  function setStatus(html, ms) {
+    lastStatus = html;
+    $('#status').innerHTML = html;
+    if (ms) setTimeout(() => { if (lastStatus === html) { lastStatus = ''; showPresence(); } }, ms);
+  }
+
+  function applySize() { $('#convo').style.fontSize = size + 'px'; $('#entry').style.fontSize = size + 'px'; }
+  $('#smaller').onclick = () => { size = Math.max(9, size - 2); applySize(); };
+  $('#normal').onclick = () => { size = C?.prefs.fontSize || 12; applySize(); };
+  $('#bigger').onclick = () => { size = Math.min(24, size + 2); applySize(); };
+
+  $('#smile').innerHTML = `<img src="${Smileys.list[0][2]}" alt="" width="18" height="18">`;
+  $('#smileys').innerHTML = Smileys.list.map(([name, code, src]) => `<span title="${esc(name)}  ${esc(code)}" data-s="${esc(code)}"><img src="${src}" alt="${esc(code)}" width="20" height="20"></span>`).join('');
+  $('#smile').onclick = e => {
+    const box = $('#smileys');
+    const r = e.currentTarget.getBoundingClientRect();
+    box.style.left = r.left + 'px';
+    box.style.top = (r.bottom + 2) + 'px';
+    box.style.display = box.style.display === 'grid' ? 'none' : 'grid';
+  };
+  $$('#smileys span').forEach(s => s.onclick = () => { insert(s.dataset.s + ' '); $('#smileys').style.display = 'none'; });
+  document.addEventListener('mousedown', e => { if (!e.target.closest('#smileys, #smile')) $('#smileys').style.display = 'none'; });
+
+  function insert(text) {
+    const t = $('#entry');
+    const [a, b] = [t.selectionStart, t.selectionEnd];
+    t.value = t.value.slice(0, a) + text + t.value.slice(b);
+    t.selectionStart = t.selectionEnd = a + text.length;
+    t.focus();
+    updateCount();
+  }
+
+  function updateCount() {
+    const max = C?.maxMessageBytes || 4096;
+    const n = utf8Len($('#entry').value);
+    const c = $('#count');
+    c.textContent = n > max * 0.8 ? `${max - n} left` : '';
+    c.classList.toggle('over', n > max);
+  }
+
+  async function send() {
+    const t = $('#entry');
+    const body = t.value.replace(/\s+$/, '');
+    if (!body.trim()) return;
+    if (utf8Len(body) > (C?.maxMessageBytes || 4096)) { Sound.alert(); return alertBox('That message is too long. Try splitting it in two.'); }
+    t.value = '';
+    updateCount();
+    typingSent = false;
+    Sound.imSend();
+    try {
+      await invoke('send_im', { login, body });
+    } catch (e) {
+      // the line already shows "(not sent)"; restore the text if the box is empty
+      if (!t.value) t.value = body;
+      setStatus(esc(String(e)), 6000);
+    }
+    t.focus();
+  }
+  $('#b-send').onclick = send;
+  $('#entry').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+  });
+  $('#entry').addEventListener('input', () => {
+    updateCount();
+    const has = $('#entry').value.length > 0;
+    if (has && !typingSent) { invoke('typing', { login, typing: true }); typingSent = true; }
+    if (!has && typingSent) { invoke('typing', { login, typing: false }); typingSent = false; }
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { if (typingSent) { invoke('typing', { login, typing: false }); typingSent = false; } }, 6000);
+  });
+
+  async function addBuddy() { invoke('open_dialog', { kind: 'addbuddy', arg: 'login:' + login }); }
+  $('#b-add').onclick = addBuddy;
+  $('#b-info').onclick = () => invoke('open_dialog', { kind: 'info', arg: login });
+  async function blockThem() {
+    if (C?.buddy?.state === 'blocked') {
+      if (await confirmBox(`Unblock ${nameOf()}?`)) invoke('unblock_buddy', { login }).catch(e => alertBox(String(e)));
+    } else if (await confirmBox(`Block ${nameOf()}? They won't be able to message you or see when you're online.`)) {
+      invoke('block_buddy', { login }).catch(e => alertBox(String(e)));
+    }
+  }
+  $('#b-block').onclick = blockThem;
+
+  async function toggleTimestamps() {
+    const s = await invoke('get_settings');
+    s.prefs.timestamps = !s.prefs.timestamps;
+    await invoke('save_prefs', { prefs: s.prefs });
+  }
+
+  function saveConvo() {
+    const text = (C?.lines || []).map(l => {
+      const mine = l.dir === 'out' || l.dir === 'auto';
+      return `[${new Date(l.ts * 1000).toLocaleString()}] ${mine ? C.me : nameOf()}: ${l.body}`;
+    }).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = `${login} conversation.txt`;
+    a.click();
+  }
+
+  function markRead() { if (document.hasFocus()) invoke('mark_read', { login }); }
+  window.addEventListener('focus', markRead);
+
+  // ---------- events ----------
+  listen('im', e => {
+    if (e.payload.login !== login) return;
+    const l = e.payload.line;
+    if (!C) return;
+    const i = C.lines.findIndex(x => x.guid === l.guid);
+    if (i >= 0) C.lines[i] = l; else C.lines.push(l);
+    const stick = atBottom() || l.dir !== 'in';
+    const existing = $(`.ln[data-guid="${CSS.escape(l.guid)}"]`);
+    const html = lineHtml(l);
+    if (existing) existing.outerHTML = html; else $('#convo').insertAdjacentHTML('beforeend', html);
+    if (stick) scrollDown();
+    if (l.dir === 'in') {
+      clearTimeout(theirTypingTimer);
+      lastStatus = '';
+      showPresence();
+      markRead();
+    }
+  });
+  listen('ack', e => {
+    if (e.payload.login !== login || !C) return;
+    const l = C.lines.find(x => x.guid === e.payload.guid);
+    if (!l) return;
+    if (l.state !== 'read') l.state = e.payload.state;
+    if (e.payload.error) l.error = e.payload.error;
+    const el = $(`.ln[data-guid="${CSS.escape(l.guid)}"]`);
+    if (el) el.outerHTML = lineHtml(l);
+    if (e.payload.state === 'read') setStatus(`Read at ${esc(fmtTime(Date.now() / 1000))}`, 8000);
+  });
+  // AIM noted it in the conversation when the other person signed off or back on.
+  listen('door', e => {
+    if (e.payload.login !== login || !C) return;
+    const text = `${nameOf()} ${e.payload.open ? 'signed on' : 'signed off'} at ${fmtTime(Date.now() / 1000)}.`;
+    $('#convo').insertAdjacentHTML('beforeend', `<div class="ln sys">${esc(text)}</div>`);
+    if (atBottom()) scrollDown();
+  });
+  listen('typing', e => {
+    if (e.payload.login !== login) return;
+    clearTimeout(theirTypingTimer);
+    if (e.payload.typing) {
+      setStatus(`${ICON.pencil}<span>${esc(nameOf())} is typing...</span>`);
+      theirTypingTimer = setTimeout(() => { lastStatus = ''; showPresence(); }, 15000);
+    } else { lastStatus = ''; showPresence(); }
+  });
+  listen('state', e => {
+    if (!C) return;
+    const b = e.payload.buddies.find(x => x.login === login);
+    C.buddy = b || null;
+    C.name = b?.name || login;
+    const me = e.payload.myName || e.payload.login;
+    if (me && me !== C.me) { C.me = me; renderAll(); }
+    renderButtons();
+    showTheirIcon();
+    if (!lastStatus) showPresence();
+  });
+  listen('prefs', e => { if (C) { C.prefs = e.payload; renderAll(); } showMyIcon(e.payload); });
+
+  let iconUrl = null;
+  async function showMyIcon(prefs) {
+    const box = $('#myicon');
+    if (!prefs?.buddyIcon) { box.classList.remove('on'); box.innerHTML = ''; return; }
+    try {
+      const bytes = await invoke('icon_data');
+      if (iconUrl) URL.revokeObjectURL(iconUrl);
+      iconUrl = URL.createObjectURL(new Blob([bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)]));
+      box.innerHTML = `<img src="${iconUrl}" alt="">`;
+      box.classList.add('on');
+    } catch { box.classList.remove('on'); }
+  }
+
+  // Their Buddy Icon sits in the lower-left, the way AIM showed it. Fetched only
+  // when their icon's hash changes; the backend keeps a cache by hash.
+  let theirHash = null, theirUrl = null, retry = null;
+  async function showTheirIcon() {
+    const h = C?.buddy?.iconHash || null;
+    if (h === theirHash) return;
+    theirHash = h;
+    clearTimeout(retry);
+    const box = $('#theiricon');
+    const hide = () => { box.classList.remove('on'); box.innerHTML = ''; };
+    if (!h) return hide();
+    try {
+      const bytes = await invoke('buddy_icon', { login });
+      if (theirHash !== h) return;
+      const b = bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes);
+      if (!b.byteLength) return hide();
+      if (theirUrl) URL.revokeObjectURL(theirUrl);
+      theirUrl = URL.createObjectURL(new Blob([b]));
+      box.innerHTML = `<img src="${theirUrl}" alt="">`;
+      box.title = `${nameOf()}'s Buddy Icon`;
+      box.classList.add('on');
+    } catch (e) {
+      invoke('log_ui', { text: `their icon (${login}): ${e}` });
+      // Busy server (RateLimited) or a dropped connection: try again later.
+      theirHash = null;
+      retry = setTimeout(showTheirIcon, 30000);
+    }
+  }
+
+  (async () => {
+    await loadSoundPref();
+    C = await invoke('get_conversation', { login });
+    size = C.prefs.fontSize || 12;
+    showMyIcon(C.prefs);
+    showTheirIcon();
+    renderAll();
+    showPresence();
+    $('#entry').focus();
+    markRead();
+  })();
+</script>
+</body>
+</html>

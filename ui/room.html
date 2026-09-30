@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat Room</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .inner { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 2px 3px 0; gap: 3px; }
+  .main { flex: 1; display: flex; gap: 4px; min-height: 0; }
+  .convo { flex: 1; min-width: 0; padding: 4px 5px; font-family: Arial, Helvetica, sans-serif; font-size: 12px; -webkit-user-select: text; user-select: text; cursor: text; line-height: 1.3; }
+  .convo .ln { white-space: pre-wrap; word-wrap: break-word; margin-bottom: 1px; }
+  .convo .who { font-weight: bold; color: var(--them); }
+  .convo .mine .who { color: var(--me); }
+  .convo .emote { color: #7a1fa2; font-style: italic; }
+  .convo .join, .convo .leave, .convo .system { color: #707070; font-style: italic; }
+  .convo .pm { color: #806000; }
+  .convo .ts { color: #808080; font-size: 0.85em; }
+  .side { width: 140px; flex: none; display: flex; flex-direction: column; gap: 3px; }
+  .side .count { padding: 2px 1px; font-weight: bold; }
+  .people { flex: 1; min-height: 0; padding: 2px 0; }
+  .people div { padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .people div.sel { background: var(--select); color: #fff; }
+  .people .away { color: var(--shadow); font-style: italic; }
+  .people .ignored { text-decoration: line-through; color: var(--shadow); }
+  .people .me { font-weight: bold; }
+  .side button { min-width: 0; }
+  .compose { flex: none; display: flex; gap: 4px; align-items: stretch; }
+  .compose textarea { flex: 1; height: 42px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
+  .compose .sendbtn { width: 64px; min-width: 0; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="menubar"></div>
+  <div class="inner">
+    <div class="main">
+      <div class="pane convo" id="convo"></div>
+      <div class="side">
+        <div class="count" id="count">Joining...</div>
+        <div class="pane people" id="people" tabindex="0"></div>
+        <button id="ignore" disabled>Ignore</button>
+      </div>
+    </div>
+    <div class="compose">
+      <textarea id="entry" spellcheck="true" placeholder="Say something to the room"></textarea>
+      <button class="sendbtn default" id="send">Send</button>
+    </div>
+  </div>
+  <div class="statusbar"><div id="status">Connecting...</div></div>
+</div>
+<script src="common.js"></script>
+<script src="smileys.js"></script>
+<script>
+  const id = param('id');
+  let R = null;
+  let selUser = null;
+  let prefs = {};
+  const ignored = new Set();
+
+  async function leave() { await invoke('leave_room', { id }); thisWindow.close(); }
+  setupWindow({ title: 'Chat Room', onClose: leave });
+
+  setupMenus([
+    { title: 'File', items: [
+      { label: 'Save Transcript...', action: save },
+      { label: 'Join Another Room...', action: () => invoke('open_dialog', { kind: 'chatrooms' }) },
+      '-',
+      { label: 'Rejoin', disabled: () => R?.state !== 'left', action: () => invoke('rejoin_room', { id }) },
+      { label: 'Leave Room', action: leave },
+    ]},
+    { title: 'Edit', items: [
+      { label: 'Copy', action: () => document.execCommand('copy') },
+      { label: 'Clear Window', action: () => { $('#convo').innerHTML = ''; } },
+      '-',
+      { label: 'Show Timestamps', checked: () => prefs.timestamps, action: async () => { const s = await invoke('get_settings'); s.prefs.timestamps = !s.prefs.timestamps; invoke('save_prefs', { prefs: s.prefs }); } },
+    ]},
+  ]);
+
+  function lineHtml(l) {
+    if (l.name && ignored.has(l.name) && (l.kind === 'chat' || l.kind === 'pm')) return '';
+    const ts = prefs.timestamps ? `<span class="ts">(${esc(fmtTime(l.ts))}) </span>` : '';
+    switch (l.kind) {
+      case 'chat': return `<div class="ln${l.mine ? ' mine' : ''}">${ts}<span class="who">${esc(l.name)}:</span> ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
+      case 'emote': return `<div class="ln emote">${ts}* ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
+      case 'pm': return `<div class="ln pm">${ts}<b>Private message from ${esc(l.name)}:</b> ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
+      default: return `<div class="ln ${esc(l.kind)}">${ts}${esc(l.text)}</div>`;
+    }
+  }
+
+  function atBottom() { const c = $('#convo'); return c.scrollHeight - c.scrollTop - c.clientHeight < 24; }
+
+  function renderPeople() {
+    const users = R?.users || [];
+    $('#count').textContent = R?.state === 'left' ? 'Not in the room' : R?.state === 'connecting' ? 'Joining...' : `${users.length} ${users.length === 1 ? 'person' : 'people'} here`;
+    $('#people').innerHTML = users.map(u => {
+      const cls = [u.flags & 1 ? 'away' : '', ignored.has(u.name) ? 'ignored' : '', u.name === R.nick ? 'me' : '', selUser === u.name ? 'sel' : ''].join(' ');
+      return `<div class="${cls}" data-n="${esc(u.name)}" title="${esc(u.name)}${u.flags & 1 ? ' (away)' : ''}">${esc(u.name)}</div>`;
+    }).join('');
+    $$('#people div').forEach(d => d.onclick = () => { selUser = d.dataset.n; renderPeople(); });
+    const can = selUser && selUser !== R?.nick;
+    $('#ignore').disabled = !can;
+    $('#ignore').textContent = can && ignored.has(selUser) ? 'Unignore' : 'Ignore';
+  }
+
+  function renderState() {
+    if (!R) return;
+    setTitle(`Chat Room: ${R.title}`);
+    const addr = `${R.host}${R.port !== 5500 ? ':' + R.port : ''}`;
+    let s;
+    if (R.state === 'connecting') s = esc(`Joining ${addr}...`);
+    else if (R.state === 'left') s = esc(R.error ? `Couldn't join ${addr}` : `Not in the room — File > Rejoin to go back`);
+    else s = `${R.encrypted ? ICON.lock : ''}<span>${esc(`In ${addr} as ${R.nick}`)}</span>`;
+    $('#status').innerHTML = s;
+    const inRoom = R.state === 'in';
+    $('#entry').disabled = !inRoom;
+    $('#send').disabled = !inRoom;
+    renderPeople();
+  }
+
+  function renderAll() {
+    $('#convo').innerHTML = (R?.lines || []).map(lineHtml).join('');
+    $('#convo').scrollTop = $('#convo').scrollHeight;
+    renderState();
+  }
+
+  function send() {
+    const t = $('#entry');
+    const text = t.value.replace(/\s+$/, '');
+    if (!text.trim()) return;
+    t.value = '';
+    invoke('room_send', { id, text }).catch(e => { t.value = text; alertBox(String(e)); });
+    t.focus();
+  }
+
+  $('#send').onclick = send;
+  $('#entry').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+  $('#ignore').onclick = () => {
+    if (!selUser) return;
+    ignored.has(selUser) ? ignored.delete(selUser) : ignored.add(selUser);
+    renderAll();
+  };
+
+  function save() {
+    const text = (R?.lines || []).map(l => `[${new Date(l.ts * 1000).toLocaleString()}] ${l.kind === 'chat' ? l.name + ': ' : ''}${l.text}`).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = `${R?.title || 'chat'} transcript.txt`;
+    a.click();
+  }
+
+  listen('room', e => {
+    if (e.payload.id !== id) return;
+    const lines = e.payload.lines || [];
+    const keep = R?.lines || [];
+    R = { ...e.payload.room, lines: keep.concat(lines) };
+    if (lines.length) {
+      const stick = atBottom() || lines.some(l => l.mine);
+      $('#convo').insertAdjacentHTML('beforeend', lines.map(lineHtml).join(''));
+      if (stick) $('#convo').scrollTop = $('#convo').scrollHeight;
+    }
+    renderState();
+  });
+  listen('prefs', e => { prefs = e.payload; renderAll(); });
+
+  (async () => {
+    prefs = (await invoke('get_settings')).prefs;
+    R = await invoke('get_room', { id });
+    if (!R) { await alertBox('That room is closed.'); return thisWindow.close(); }
+    renderAll();
+    $('#entry').focus();
+  })();
+</script>
+</body>
+</html>

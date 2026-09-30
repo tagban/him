@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Edit Profile</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .row > label.lbl { width: 86px; }
+  .bday { display: flex; gap: 4px; flex: 1; }
+  .bday select, .bday input { min-width: 0; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="hint">Only your buddies can see your profile. Every field is optional. "Name to show" is the name on their Buddy Lists.</div>
+    <div class="row"><label class="lbl" for="nick">Name to show</label><input type="text" id="nick" maxlength="64"></div>
+    <div class="row"><label class="lbl" for="first">First name</label><input type="text" id="first" maxlength="64"></div>
+    <div class="row"><label class="lbl" for="last">Last name</label><input type="text" id="last" maxlength="64"></div>
+    <div class="row"><label class="lbl" for="email">E-mail</label><input type="text" id="email" maxlength="120"></div>
+    <div class="row"><label class="lbl" for="gender">Gender</label><select id="gender"><option value="0">(not given)</option><option value="1">Female</option><option value="2">Male</option><option value="3">Other</option></select></div>
+    <div class="row"><label class="lbl">Birthday</label><div class="bday">
+      <select id="month"></select><input type="number" id="day" min="0" max="31" placeholder="Day" style="width:48px;flex:none"><input type="number" id="year" min="0" max="2100" placeholder="Year" style="width:60px;flex:none">
+    </div></div>
+    <div class="row"><label class="lbl" for="country">Country</label><input type="text" id="country" maxlength="2" placeholder="US" style="flex:none;width:44px;text-transform:uppercase"><label class="lbl" for="post" style="width:auto;margin-left:8px">Postal code</label><input type="text" id="post" maxlength="16"></div>
+    <div class="row"><label class="lbl" for="langs">Languages</label><input type="text" id="langs" placeholder="en, es" maxlength="20"></div>
+    <div class="error" id="err"></div>
+    <div class="buttons"><button class="default" id="ok">Save</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Edit Profile', minimize: false });
+  const MONTHS = ['(month)', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  $('#month').innerHTML = MONTHS.map((m, i) => `<option value="${i}">${m}</option>`).join('');
+  const opt = s => (s && s.trim()) ? s.trim() : null;
+
+  (async () => {
+    try {
+      const me = (await invoke('get_state')).login;
+      const v = await invoke('get_info', { login: me });
+      const p = v.profile || {};
+      $('#nick').value = p.nickname || v.name || '';
+      $('#first').value = p.firstName || '';
+      $('#last').value = p.lastName || '';
+      $('#email').value = p.email || '';
+      $('#gender').value = String(p.gender || 0);
+      const [y, m, d] = p.birth || [0, 0, 0];
+      $('#year').value = y || ''; $('#month').value = String(m || 0); $('#day').value = d || '';
+      $('#country').value = p.country || '';
+      $('#post').value = p.postcode || '';
+      $('#langs').value = (p.languages || []).join(', ');
+    } catch (e) { $('#err').textContent = String(e); }
+    $('#nick').focus();
+  })();
+
+  $('#ok').onclick = async () => {
+    const langs = $('#langs').value.split(/[,\s]+/).map(s => s.trim().toLowerCase()).filter(s => /^[a-z]{2}$/.test(s)).slice(0, 3);
+    const profile = {
+      nickname: opt($('#nick').value), firstName: opt($('#first').value), lastName: opt($('#last').value),
+      email: opt($('#email').value), gender: +$('#gender').value,
+      birth: [Math.max(0, +$('#year').value || 0), +$('#month').value, Math.max(0, Math.min(31, +$('#day').value || 0))],
+      country: opt($('#country').value.toUpperCase()), postcode: opt($('#post').value), languages: langs,
+    };
+    try { await invoke('set_profile', { profile }); thisWindow.close(); }
+    catch (e) { $('#err').textContent = String(e); }
+  };
+  $('#cancel').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

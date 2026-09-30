@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buddy Info</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .card { flex: 1; min-height: 0; padding: 8px; font-family: Arial, sans-serif; font-size: 12px; -webkit-user-select: text; user-select: text; }
+  .card h2 { font-size: 15px; margin: 0 0 2px; }
+  .card .login { color: #505050; margin-bottom: 8px; }
+  .card table { border-collapse: collapse; width: 100%; }
+  .card td { padding: 2px 4px 2px 0; vertical-align: top; }
+  .card td:first-child { color: #505050; width: 84px; white-space: nowrap; }
+  .card .status { margin: 6px 0 8px; padding: 4px 6px; background: #ffffe1; border: 1px solid #c0c0a0; }
+  .card .empty { color: #707070; font-style: italic; margin-top: 8px; }
+  .card .bicon { float: right; width: 56px; height: 56px; margin: 0 0 4px 8px; display: grid; place-items: center; background: #fff;
+    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow), inset -2px -2px var(--light), inset 2px 2px var(--dark); }
+  .card .bicon img { width: 48px; height: 48px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="pane card" id="card">Looking up...</div>
+    <div class="buttons">
+      <button id="edit" style="display:none">Edit My Profile</button>
+      <button id="im">Send IM</button>
+      <button id="rename">Rename...</button>
+      <button class="default" id="close">Close</button>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  const login = param('a');
+  setupWindow({ title: `Buddy Info: ${login}`, minimize: false });
+  const GENDER = ['', 'Female', 'Male', 'Other'];
+  const MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  function birthday([y, m, d]) {
+    const parts = [];
+    if (m) parts.push(MONTHS[m] || m);
+    if (d) parts.push(d);
+    let s = parts.join(' ');
+    if (y) s = s ? `${s}, ${y}` : String(y);
+    return s;
+  }
+
+  (async () => {
+    try {
+      const v = await invoke('get_info', { login });
+      const b = v.buddy;
+      const name = b?.nickname || v.name || login;
+      let html = `<h2>${esc(name)}</h2><div class="login">Screen name: ${esc(login)}${b?.nickname && v.name ? ` — goes by ${esc(v.name)}` : ''}</div>`;
+      if (b?.state === 'accepted') {
+        const st = { online: 'Online', away: 'Away', busy: 'Busy', offline: 'Offline', invisible: 'Offline' }[b.presence];
+        html += `<div class="status"><b>${st}</b>${b.statusText ? ': ' + esc(b.statusText) : ''}</div>`;
+      }
+      const p = v.profile;
+      if (p) {
+        const rows = [
+          ['Name', [p.firstName, p.lastName].filter(Boolean).join(' ')],
+          ['E-mail', p.email],
+          ['Gender', GENDER[p.gender]],
+          ['Birthday', birthday(p.birth)],
+          ['Country', p.country],
+          ['Postal code', p.postcode],
+          ['Languages', (p.languages || []).join(', ')],
+        ].filter(r => r[1]);
+        html += rows.length ? `<table>${rows.map(r => `<tr><td>${r[0]}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>` : `<div class="empty">${v.isMe ? "You haven't filled in a profile yet." : "They haven't filled in a profile."}</div>`;
+      } else {
+        html += `<div class="empty">Profiles are only shown to buddies. Add ${esc(login)} as a buddy to see theirs.</div>`;
+      }
+      $('#card').innerHTML = html;
+      showIcon(v.isMe, b);
+      $('#edit').style.display = v.isMe ? '' : 'none';
+      $('#im').disabled = b?.state !== 'accepted';
+      $('#rename').disabled = b?.state !== 'accepted';
+    } catch (e) {
+      $('#card').innerHTML = `<div class="empty">${esc(String(e))}</div>`;
+      $('#im').disabled = $('#rename').disabled = true;
+    }
+  })();
+  async function showIcon(isMe, b) {
+    if (!isMe && !b?.iconHash) return;
+    try {
+      const bytes = await invoke(isMe ? 'icon_data' : 'buddy_icon', isMe ? {} : { login });
+      const d = bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes);
+      if (!d.byteLength) return;
+      const url = URL.createObjectURL(new Blob([d]));
+      $('#card').insertAdjacentHTML('afterbegin', `<div class="bicon"><img src="${url}" alt=""></div>`);
+    } catch {}
+  }
+  $('#edit').onclick = () => { invoke('open_dialog', { kind: 'profile' }); thisWindow.close(); };
+  $('#im').onclick = () => { invoke('open_im', { login }); thisWindow.close(); };
+  $('#rename').onclick = () => { invoke('open_dialog', { kind: 'group', arg: 'alias:' + login }); thisWindow.close(); };
+  $('#close').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

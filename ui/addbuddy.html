@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add Buddy</title>
+<link rel="stylesheet" href="aim.css">
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="hint" id="intro">Enter the screen name of the buddy you want to add. They'll be asked to approve it.</div>
+    <div class="row"><label class="lbl" for="login">Screen Name</label><input type="text" id="login" spellcheck="false" autocomplete="off"></div>
+    <div class="row" id="grprow"><label class="lbl" for="group">Group</label><select id="group"></select></div>
+    <div class="row" id="noterow"><label class="lbl" for="note">Note</label><input type="text" id="note" placeholder="Hi, it's me from..." maxlength="200"></div>
+    <div class="error" id="err"></div>
+    <div class="buttons"><button class="default" id="ok">Add</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  const arg = param('a');
+  const imMode = arg === 'im:';
+  setupWindow({ title: imMode ? 'Send Instant Message' : 'Add Buddy', minimize: false });
+
+  (async () => {
+    const s = await invoke('get_state');
+    $('#group').innerHTML = s.groups.map(g => `<option>${esc(g.name)}</option>`).join('');
+    if (arg.startsWith('login:')) $('#login').value = arg.slice(6);
+    else if (arg && !imMode && s.groups.some(g => g.name === arg)) $('#group').value = arg;
+    if (imMode) {
+      $('#intro').textContent = 'Who do you want to send an Instant Message to?';
+      $('#grprow').style.display = 'none';
+      $('#noterow').style.display = 'none';
+      $('#ok').textContent = 'OK';
+    }
+    ($('#login').value ? $('#note') : $('#login')).focus();
+
+    $('#ok').onclick = async () => {
+      const login = $('#login').value.trim();
+      if (!login) return ($('#err').textContent = 'Enter a screen name.');
+      $('#err').textContent = '';
+      if (imMode) {
+        const st = await invoke('get_state');
+        const b = st.buddies.find(x => x.login.toLowerCase() === login.toLowerCase() || x.name.toLowerCase() === login.toLowerCase());
+        if (b?.state === 'accepted') { await invoke('open_im', { login: b.login }); return thisWindow.close(); }
+        // Hotline IM delivers only between buddies: offer to add them.
+        location.search = '?a=' + encodeURIComponent('login:' + login);
+        return;
+      }
+      $('#ok').disabled = true;
+      try {
+        await invoke('add_buddy', { login, note: $('#note').value, group: $('#group').value });
+        await alertBox(`A buddy request was sent to ${login}. They'll show up on your list once they accept.`, { icon: 'info', title: 'Add Buddy' });
+        thisWindow.close();
+      } catch (e) {
+        $('#err').textContent = String(e);
+        $('#ok').disabled = false;
+      }
+    };
+    $('#cancel').onclick = () => thisWindow.close();
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') $('#ok').click(); });
+  })();
+</script>
+</body>
+</html>

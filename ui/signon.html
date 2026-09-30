@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign On</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .banner {
+    flex: none;
+    height: 132px;
+    margin: 2px 0 4px;
+    background: linear-gradient(#ffffff, #dcdcdc);
+    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .banner img { width: 84px; height: 84px; image-rendering: auto; }
+  .wordmark { margin-top: 2px; font-family: "Arial Black", "Arial", sans-serif; font-weight: 900; font-style: italic; font-size: 17px; line-height: 1; letter-spacing: -0.3px; color: #1a1a1a; }
+  .wordmark span { color: #d01008; }
+  .sub { font-family: Arial, sans-serif; font-weight: bold; font-style: italic; font-size: 11px; color: #222; margin-top: 1px; }
+  .form { padding: 2px 6px; display: flex; flex-direction: column; gap: 3px; }
+  .form .lbl { font-weight: bold; margin-top: 2px; }
+  .lblrow { display: flex; align-items: baseline; justify-content: space-between; }
+  .lblrow .smalllink { align-self: auto; }
+  .combo { display: flex; }
+  .combo input { flex: 1; min-width: 0; }
+  .combo button { min-width: 0; width: 17px; padding: 0; height: 21px; }
+  .smalllink { font-size: 10px; align-self: flex-start; }
+  .checks { display: flex; gap: 10px; margin: 3px 0 1px; }
+  .btnrow { display: flex; align-items: flex-end; gap: 4px; padding: 6px 6px 3px; }
+  .btnrow .small { min-width: 0; width: 44px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 3px 0 2px; font-size: 10px; }
+  .btnrow .small svg { width: 18px; height: 18px; }
+  .signbtn { margin-left: auto; min-width: 0; width: 74px; height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-weight: bold; }
+  .signbtn svg { width: 22px; height: 22px; }
+  .dropdown { position: absolute; z-index: 20; background: #fff; box-shadow: 1px 1px 0 #000, inset 0 0 0 1px #000; max-height: 120px; overflow: auto; display: none; }
+  .dropdown div { padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dropdown div:hover, .dropdown div.sel { background: var(--select); color: #fff; }
+  .steps { display: none; padding: 10px 8px; flex-direction: column; gap: 9px; }
+  .step { display: flex; gap: 8px; align-items: center; color: var(--shadow); }
+  .step .dot { width: 14px; height: 14px; display: grid; place-items: center; }
+  .step.now { color: #000; font-weight: bold; }
+  .step.done { color: #000; }
+  .step.done .dot::after { content: "✓"; color: #008000; font-weight: bold; }
+  .step.now .dot::after { content: ""; width: 8px; height: 8px; background: #000080; animation: blink 0.6s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .setup { display: none; padding: 6px; flex-direction: column; gap: 5px; }
+  .signing .form, .signing .btnrow { display: none; }
+  .signing .steps { display: flex; }
+  .insetup .form, .insetup .btnrow { display: none; }
+  .insetup .setup { display: flex; }
+  .version { font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="banner">
+    <img src="img/hotline-h.svg" alt="">
+    <div class="wordmark"><span>HIM</span></div>
+    <div class="sub">Hotline Instant Messenger</div>
+  </div>
+
+  <div class="form" id="form">
+    <div class="lblrow"><span class="lbl">Screen Name</span><a class="smalllink" id="getname" title="Make a new account on this server">Get a Screen Name</a></div>
+    <div class="combo" style="position:relative">
+      <input type="text" id="login" autocomplete="off" spellcheck="false">
+      <button id="dd" tabindex="-1" title="Saved screen names"><svg viewBox="0 0 7 4" width="7" height="4"><path d="M0 0h7l-3.5 4z"/></svg></button>
+      <div class="dropdown" id="list"></div>
+    </div>
+    <a class="smalllink" id="serverlink"></a>
+    <div class="lbl">Password</div>
+    <input type="password" id="password" autocomplete="off">
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="savepw"> Save password</label>
+    </div>
+    <label class="check"><input type="checkbox" id="auto"> Auto-login</label>
+    <a class="smalllink" id="chatonly" title="Join Hotline chat rooms as a guest, using the Screen Name above">Chat rooms only (no sign on)</a>
+    <div class="error" id="err"></div>
+  </div>
+
+  <div class="steps" id="steps">
+    <div class="step" data-s="0"><span class="dot"></span>Connecting...</div>
+    <div class="step" data-s="1"><span class="dot"></span>Verifying screen name and password...</div>
+    <div class="step" data-s="2"><span class="dot"></span>Starting services...</div>
+    <div style="margin-top:8px;text-align:center"><button id="cancel">Cancel</button></div>
+  </div>
+
+  <div class="setup" id="setup">
+    <b>Connection</b>
+    <div class="row"><label class="lbl" for="host" style="width:40px">Server</label><input type="text" id="host" spellcheck="false" placeholder="hotline.example.com"></div>
+    <div class="row"><label class="lbl" for="port" style="width:40px">Port</label><input type="number" id="port" min="1" max="65535" value="5500"></div>
+    <div class="lbl" style="margin-top:4px">Security</div>
+    <select id="security">
+      <option value="auto">Automatic (recommended)</option>
+      <option value="tls">TLS only</option>
+      <option value="hopeEncrypted">HOPE encryption only</option>
+      <option value="plain">No encryption (old servers)</option>
+    </select>
+    <div class="hint" style="font-size:10px">Automatic uses the strongest protection the server offers and tells you if it falls back.</div>
+    <div class="buttons" style="margin-top:6px"><button class="default" id="setupok">OK</button><button id="setupcancel">Cancel</button></div>
+  </div>
+
+  <div class="btnrow" id="btnrow">
+    <button class="small" id="help" title="About HIM">${help}</button>
+    <button class="small" id="setupbtn" title="Server and security">${setup}</button>
+    <button class="signbtn default" id="signon"><span id="signicon"></span>Sign On</button>
+  </div>
+  <div class="statusbar"><div class="version" id="version">Version</div></div>
+</div>
+<script src="common.js"></script>
+<script>
+  let accounts = [];
+  let current = { host: '', port: 5500, security: 'auto' };
+  let signupHosts = [];
+  let busy = false;
+
+  setupWindow({ title: 'Sign On', minimize: true, onClose: () => invoke('quit_app') });
+  $('#help').innerHTML = ICON.question.replace('<svg ', '<svg width="18" height="18" ') + 'Help';
+  $('#setupbtn').innerHTML = `<svg viewBox="0 0 22 22" width="18" height="18"><circle cx="11" cy="11" r="7" fill="#c0c0c0" stroke="#000" stroke-width="1.4"/><circle cx="11" cy="11" r="2.5" fill="#fff" stroke="#000"/><path d="M11 1v4M11 17v4M1 11h4M17 11h4M4 4l3 3M15 15l3 3M18 4l-3 3M4 18l3-3" stroke="#000" stroke-width="2"/></svg>Setup`;
+  $('#signicon').innerHTML = ICON.h.replace('<svg ', '<svg width="22" height="22" ');
+
+  function serverText() {
+    $('#serverlink').textContent = current.host ? `Server: ${current.host}${current.port != 5500 ? ':' + current.port : ''}` : 'Choose a server...';
+    $('#getname').style.visibility = signupHosts.includes(current.host.toLowerCase()) ? 'visible' : 'hidden';
+  }
+
+  function fill(a) {
+    $('#login').value = a.login;
+    current = { host: a.host, port: a.port, security: a.security };
+    $('#savepw').checked = a.savePassword;
+    $('#auto').checked = a.autoLogin;
+    $('#password').value = '';
+    $('#password').placeholder = a.hasPassword ? '••••••••' : '';
+    $('#password').dataset.saved = a.hasPassword ? '1' : '';
+    serverText();
+  }
+
+  async function load() {
+    const s = await invoke('get_settings');
+    accounts = s.accounts;
+    signupHosts = s.signupHosts;
+    current.host = s.defaultHost;
+    current.port = s.defaultPort;
+    $('#version').textContent = `Version: ${s.version}`;
+    const last = accounts.find(a => a.key === s.lastAccount) || accounts[0];
+    if (last) fill(last); else serverText();
+    ($('#login').value ? $('#password') : $('#login')).focus();
+    if (last && last.autoLogin && last.hasPassword && !param('manual')) signOn();
+  }
+
+  // saved screen names drop-down
+  function showList(show) {
+    const list = $('#list');
+    if (!show || !accounts.length) { list.style.display = 'none'; return; }
+    list.style.display = 'block';
+    list.style.top = '21px'; list.style.left = '0'; list.style.right = '0';
+    list.innerHTML = accounts.map((a, i) => `<div data-i="${i}" title="${esc(a.host)}">${esc(a.login)} <span style="opacity:.6">(${esc(a.host)})</span></div>`).join('');
+    $$('div', list).forEach(d => d.onmousedown = e => { e.preventDefault(); fill(accounts[d.dataset.i]); showList(false); $('#password').focus(); });
+  }
+  $('#dd').onmousedown = e => { e.preventDefault(); showList($('#list').style.display !== 'block'); };
+  document.addEventListener('mousedown', e => { if (!e.target.closest('.combo')) showList(false); });
+  $('#login').addEventListener('input', () => {
+    const a = accounts.find(x => x.login === $('#login').value && x.host === current.host);
+    $('#password').placeholder = a?.hasPassword ? '••••••••' : '';
+    $('#password').dataset.saved = a?.hasPassword ? '1' : '';
+  });
+
+  // Setup panel
+  function openSetup() {
+    $('#host').value = current.host;
+    $('#port').value = current.port;
+    $('#security').value = current.security;
+    document.body.classList.add('insetup');
+    $('#host').focus();
+  }
+  function closeSetup(save) {
+    if (save) {
+      let host = $('#host').value.trim();
+      let port = parseInt($('#port').value, 10) || 5500;
+      const m = host.match(/^(.*):(\d+)$/);
+      if (m && !host.includes(']')) { host = m[1]; port = parseInt(m[2], 10); }
+      current = { host, port, security: $('#security').value };
+      serverText();
+    }
+    document.body.classList.remove('insetup');
+    $('#login').focus();
+  }
+  $('#setupbtn').onclick = openSetup;
+  $('#serverlink').onclick = openSetup;
+  $('#setupok').onclick = () => closeSetup(true);
+  $('#setupcancel').onclick = () => closeSetup(false);
+  $('#help').onclick = () => invoke('open_dialog', { kind: 'about' });
+  $('#getname').onclick = () => invoke('open_signup', { host: current.host }).catch(e => { $('#err').textContent = String(e); });
+  $('#chatonly').onclick = () => invoke('chat_only', { nick: $('#login').value }).catch(e => { $('#err').textContent = String(e); });
+
+  function setStep(n) {
+    $$('.step').forEach(s => {
+      const i = +s.dataset.s;
+      s.classList.toggle('done', i < n);
+      s.classList.toggle('now', i === n);
+    });
+  }
+  listen('signon-step', e => {
+    if (e.payload.startsWith('Connecting')) setStep(0);
+    else setStep(2);
+  });
+
+  async function signOn() {
+    if (busy) return;
+    $('#err').textContent = '';
+    if (!current.host) { openSetup(); return; }
+    if (!$('#login').value.trim()) { $('#err').textContent = 'Please enter a screen name.'; return; }
+    if (!$('#password').value && !$('#password').dataset.saved) { $('#err').textContent = 'Please enter your password.'; return; }
+    busy = true;
+    document.body.classList.add('signing');
+    setStep(0);
+    const t = setTimeout(() => setStep(1), 700);
+    try {
+      await invoke('sign_on', { req: {
+        login: $('#login').value.trim(), password: $('#password').value,
+        host: current.host, port: current.port, security: current.security,
+        savePassword: $('#savepw').checked, autoLogin: $('#auto').checked,
+      }});
+    } catch (e) {
+      clearTimeout(t);
+      busy = false;
+      document.body.classList.remove('signing');
+      Sound.alert();
+      await alertBox(String(e), { title: 'Sign On' });
+      $('#password').focus();
+    }
+  }
+  $('#signon').onclick = signOn;
+  $('#cancel').onclick = () => location.reload();
+  $('#form').addEventListener('keydown', e => { if (e.key === 'Enter') signOn(); });
+  $('#auto').onchange = () => { if ($('#auto').checked) $('#savepw').checked = true; };
+  $('#savepw').onchange = () => { if (!$('#savepw').checked) $('#auto').checked = false; };
+
+  loadSoundPref();
+  load();
+</script>
+</body>
+</html>

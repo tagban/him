@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f4f4"/>
+      <stop offset="1" stop-color="#bcbcbc"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" stroke="#7a7a7a" stroke-width="10"/>
+  <rect x="118" y="118" width="788" height="788" rx="170" fill="none" stroke="#ffffff" stroke-width="10" opacity="0.8"/>
+  <g transform="translate(212 212) scale(37.5) translate(3 1)">
+  <!-- The Hotline "H" as it appears on bigredh.com, redrawn as a vector:
+       the left stem rises to a point, the right stem drops to one, with a
+       darker shade on the right and under the crossbar. -->
+  <defs>
+    <linearGradient id="hf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff2a1e"/>
+      <stop offset="1" stop-color="#d80000"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#3a0000" stroke-width="0.35" stroke-linejoin="round">
+    <path d="M0 2L3 0V13H0Z M7 2H10V12L7 14Z M3 6H7V9H3Z" fill="#8a0000"/>
+  </g>
+  <path d="M0 2L2 0.667V13H0Z M7 2H9V12.667L7 14Z M0 6H9V8H0Z" fill="url(#hf)"/>
+  <path d="M0.35 2.2L1.65 1.35" stroke="#ff9a90" stroke-width="0.3" stroke-linecap="round"/>
+</g>
+</svg>

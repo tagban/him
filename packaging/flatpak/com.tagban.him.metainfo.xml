@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.tagban.him</id>
+  <name>HIM</name>
+  <summary>Hotline Instant Messenger, a late-90s style buddy list</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.tagban">
+    <name>John Leighow</name>
+  </developer>
+  <description>
+    <p>
+      A buddy list in the spirit of late-90s AIM for the Hotline network: a Sign On
+      window, a Buddy List, one small window per conversation, away messages, buddy
+      icons, smileys, door sounds, and Hotline servers as chat rooms.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/tagban/him</url>
+  <launchable type="desktop-id">com.tagban.him.desktop</launchable>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+  <releases>
+    <release version="0.1.0" date="2026-09-30"/>
+  </releases>
+</component>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>About</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .about { display: flex; gap: 12px; align-items: flex-start; }
+  .about img { width: 56px; height: 56px; }
+  .about h1 { font-family: "Arial Black", Arial, sans-serif; font-style: italic; font-size: 16px; margin: 0; }
+  .about h1 span { color: #d01008; }
+  .about p { margin: 5px 0; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="about">
+      <img src="img/hotline-h.svg" alt="">
+      <div>
+        <h1><span>HIM</span></h1>
+        <p style="margin-top:0;font-weight:bold">Hotline Instant Messenger</p>
+        <p id="ver">Version</p>
+        <p>An instant messenger for the Hotline network, in the spirit of the classic late-90s buddy list.</p>
+        <p>Speaks fogWraith's Hotline Instant Messaging extension, with HOPE secure sign-on and encryption.</p>
+      </div>
+    </div>
+    <div class="buttons"><button class="default" id="ok">OK</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'About HIM', minimize: false });
+  invoke('get_settings').then(s => $('#ver').textContent = `Version ${s.version}`);
+  $('#ok').onclick = () => thisWindow.close();
+  $('#ok').focus();
+</script>
+</body>
+</html>

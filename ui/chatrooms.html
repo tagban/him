@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat Rooms</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .list { flex: 1; min-height: 0; padding: 0; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { position: sticky; top: 0; z-index: 1; text-align: left; font-weight: normal; padding: 2px 4px; background: var(--face);
+       box-shadow: inset -1px -1px var(--dark), inset 1px 1px var(--hilite), inset -2px -2px var(--shadow); white-space: nowrap; }
+  td { padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td.n { text-align: right; width: 54px; }
+  th.n { text-align: right; width: 54px; }
+  tr.sel td { background: var(--select); color: #fff; }
+  tr.group td { font-weight: bold; background: #efefef; color: #000; }
+  tr.divider td { padding: 0; height: 3px; border-top: 1px solid var(--shadow); border-bottom: 1px solid var(--hilite); background: var(--face); }
+  .desc { color: #505050; }
+  tr.sel .desc { color: #fff; }
+  .note { color: #707070; font-style: italic; padding: 8px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div>Every Hotline server that lets guests in is a chat room. Pick one to join:</div>
+    <div class="row"><input type="text" id="q" placeholder="Search rooms" spellcheck="false"><button id="refresh" style="min-width:70px">Refresh</button></div>
+    <div class="pane list" id="list"><div class="note">Finding rooms...</div></div>
+    <div class="hint" id="info" style="font-size:10px"></div>
+    <div class="row"><label class="lbl" for="addr" style="width:auto">Or enter a server:</label><input type="text" id="addr" placeholder="hotline.example.com:5500" spellcheck="false"></div>
+    <div class="buttons"><button class="default" id="go">Go</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Join a Chat Room', minimize: false });
+  let listing = null, recent = [], pick = null;
+
+  function parseAddr(s) {
+    s = s.trim();
+    if (!s) return null;
+    const m = s.match(/^\[?([^\]]+?)\]?(?::(\d+))?$/);
+    return m ? { host: m[1], port: m[2] ? parseInt(m[2], 10) : 5500 } : null;
+  }
+
+  function render() {
+    const q = $('#q').value.trim().toLowerCase();
+    const match = s => !q || s.name.toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q) || s.host.includes(q);
+    const rows = [];
+    const rec = recent.filter(match);
+    if (rec.length) {
+      rows.push(`<tr class="group"><td colspan="3">Recent</td></tr>`);
+      rec.forEach((r, i) => rows.push(`<tr data-k="r${i}"><td>${esc(r.name)}</td><td class="n"></td><td class="desc">${esc(r.host)}${r.port !== 5500 ? ':' + r.port : ''}</td></tr>`));
+    }
+    const servers = (listing?.servers || []).filter(match);
+    if (listing) {
+      if (rec.length) rows.push(`<tr class="divider"><td colspan="3"></td></tr>`);
+      servers.forEach((s, i) => rows.push(`<tr data-k="s${i}" title="${esc(s.description)}\n${esc(s.host)}:${s.port}"><td>${esc(s.name || s.host)}</td><td class="n">${s.users}</td><td class="desc">${esc(s.description)}</td></tr>`));
+      if (!servers.length) rows.push(`<tr><td colspan="3" class="note">${q ? 'No rooms match.' : "Couldn't find any rooms right now. Try Refresh."}</td></tr>`);
+    }
+    $('#list').innerHTML = `<table><thead><tr><th>Room</th><th class="n">People</th><th>About</th></tr></thead><tbody>${rows.join('')}</tbody></table>` +
+      (listing ? '' : '<div class="note">Finding rooms...</div>');
+    $$('#list tr[data-k]').forEach(tr => {
+      const k = tr.dataset.k;
+      const item = k[0] === 'r' ? rec[+k.slice(1)] : servers[+k.slice(1)];
+      tr.onclick = () => { $$('#list tr').forEach(x => x.classList.remove('sel')); tr.classList.add('sel'); pick = item; $('#addr').value = ''; };
+      tr.ondblclick = () => { pick = item; join(); };
+    });
+    if (listing) {
+      const n = listing.servers.length;
+      $('#info').textContent = `${n} room${n === 1 ? '' : 's'}`;
+      // which listing services answered, for the curious
+      $('#info').title = [`${listing.trackers.length - listing.failed.length} of ${listing.trackers.length} trackers answered.`, ...listing.failed].join('\n');
+    }
+  }
+
+  async function load(refresh) {
+    $('#refresh').disabled = true;
+    if (refresh) { listing = null; render(); }
+    try { listing = await invoke('list_rooms', { refresh }); } catch (e) { listing = { servers: [], failed: [String(e)], trackers: [] }; }
+    $('#refresh').disabled = false;
+    render();
+  }
+
+  async function join() {
+    const typed = parseAddr($('#addr').value);
+    const target = typed ? { host: typed.host, port: typed.port, name: null } : pick ? { host: pick.host, port: pick.port, name: pick.name || null } : null;
+    if (!target) return alertBox('Pick a room, or type a server address.', { icon: 'info' });
+    try { await invoke('join_room', target); thisWindow.close(); }
+    catch (e) { alertBox(String(e)); }
+  }
+
+  $('#q').addEventListener('input', render);
+  $('#refresh').onclick = () => load(true);
+  $('#go').onclick = join;
+  $('#addr').addEventListener('keydown', e => { if (e.key === 'Enter') join(); });
+  $('#cancel').onclick = () => thisWindow.close();
+  invoke('get_settings').then(s => { recent = s.recentRooms || []; render(); });
+  load(false);
+  $('#q').focus();
+</script>
+</body>
+</html>

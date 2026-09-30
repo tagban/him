@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buddy Icon</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .top { display: flex; gap: 12px; align-items: flex-start; }
+  .frame { width: 56px; height: 56px; flex: none; display: grid; place-items: center; background: #fff;
+    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow), inset -2px -2px var(--light), inset 2px 2px var(--dark); }
+  .frame img { width: 48px; height: 48px; image-rendering: pixelated; }
+  .frame .none { color: #909090; font-size: 10px; text-align: center; }
+  .name { color: #404040; margin-top: 4px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="top">
+      <div class="frame" id="frame"><span class="none">No icon</span></div>
+      <div>
+        <div>Your buddies see your Buddy Icon in their IM windows with you. Animated GIFs play, like they did on AIM. Big pictures are scaled to 48 x 48.</div>
+        <div class="name" id="name"></div>
+      </div>
+    </div>
+    <div class="hint" style="font-size:10px">Looking for one? BadassBuddy keeps the classic AIM icons. Choose a downloaded icon or a whole .zip of them, or right-click one, Copy Image Address, and paste the link here:</div>
+    <div class="row"><input type="text" id="url" placeholder="https://..." spellcheck="false"><button id="paste" style="min-width:74px">Use Link</button></div>
+    <div class="error" id="err"></div>
+    <div class="buttons">
+      <button id="browse">Browse BadassBuddy</button>
+      <button id="gallery" style="display:none" title="The zip of icons you opened before">My Icons...</button>
+      <span class="grow"></span>
+      <button id="pick" class="default">Choose File...</button>
+      <button id="clear">Clear</button>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Buddy Icon', minimize: false });
+
+  async function show(prefs) {
+    $('#gallery').style.display = prefs.iconGallery ? '' : 'none';
+    const v = prefs.buddyIcon;
+    $('#clear').disabled = !v;
+    $('#name').textContent = v ? (v.split('|')[1] || '') : '';
+    if (!v) { $('#frame').innerHTML = '<span class="none">No icon</span>'; return; }
+    try {
+      const bytes = await invoke('icon_data');
+      const url = URL.createObjectURL(new Blob([bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)]));
+      $('#frame').innerHTML = `<img src="${url}" alt="">`;
+    } catch (e) { $('#err').textContent = String(e); }
+  }
+
+  invoke('get_settings').then(s => show(s.prefs));
+  listen('prefs', e => show(e.payload));
+  $('#pick').onclick = async () => {
+    $('#err').textContent = '';
+    try {
+      if (await invoke('pick_icon') === 'gallery') invoke('open_dialog', { kind: 'gallery' });
+    } catch (e) { $('#err').textContent = String(e); }
+  };
+  $('#gallery').onclick = () => invoke('open_dialog', { kind: 'gallery' });
+  $('#clear').onclick = () => { $('#err').textContent = ''; invoke('clear_icon').catch(e => ($('#err').textContent = String(e))); };
+  $('#paste').onclick = async () => {
+    $('#err').textContent = '';
+    $('#paste').disabled = true;
+    try { await invoke('icon_from_url', { url: $('#url').value }); $('#url').value = ''; }
+    catch (e) { $('#err').textContent = String(e); }
+    $('#paste').disabled = false;
+  };
+  $('#url').addEventListener('keydown', e => { if (e.key === 'Enter') $('#paste').click(); });
+  $('#browse').onclick = () => invoke('open_icon_site', { url: 'https://www.badassbuddy.com/' }).catch(e => ($('#err').textContent = String(e)));
+</script>
+</body>
+</html>

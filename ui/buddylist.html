@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buddy List</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .banner {
+    flex: none;
+    height: 46px;
+    margin: 1px 0 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    background: linear-gradient(90deg, #fff 0%, #e9e9e9 60%, #d4d4d4 100%);
+    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow);
+    overflow: hidden;
+  }
+  .banner img { width: 36px; height: 36px; flex: none; }
+  .banner .w1 { font-family: "Arial Black", Arial, sans-serif; font-style: italic; font-weight: 900; font-size: 13px; color: #d01008; line-height: 1; }
+  .banner .w2 { font-size: 10px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .banner .txt { min-width: 0; }
+  .tabpanel { padding: 4px; }
+  .tree { flex: 1; min-height: 0; padding: 2px 0; }
+  .grp { display: flex; align-items: center; gap: 3px; padding: 1px 3px; font-weight: bold; white-space: nowrap; }
+  .grp .tri { width: 10px; display: grid; place-items: center; }
+  .bud { display: flex; align-items: center; gap: 3px; padding: 1px 3px 1px 16px; white-space: nowrap; }
+  .bud .ic { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
+  .bud .nm { overflow: hidden; text-overflow: ellipsis; }
+  .bud.sel .nm, .grp.sel .gn { background: var(--select); color: #fff; outline: 1px dotted #fff; outline-offset: -1px; }
+  .bud.away .nm { color: #000; }
+  .bud.away .nm::after { content: ""; }
+  .bud.idle .nm, .bud.offline .nm { color: var(--shadow); }
+  .bud.gone .nm { font-style: italic; color: var(--shadow); }
+  .bud.arrived .nm { font-weight: bold; }
+  .bud.pending .nm { font-style: italic; color: #505050; }
+  .bud.blocked .nm { text-decoration: line-through; color: var(--shadow); }
+  .bud .unread { margin-left: auto; color: #c00000; font-weight: bold; padding-left: 4px; }
+  .bud.drop, .grp.drop { background: #c8d8ff; }
+  .setupbtns { display: flex; gap: 3px; margin-top: 4px; }
+  .setupbtns button { min-width: 0; flex: 1; padding: 2px 3px; }
+  .me { display: flex; align-items: center; gap: 4px; padding: 0 2px 3px; font-weight: bold; white-space: nowrap; overflow: hidden; }
+  .me .st { font-weight: normal; color: #505050; overflow: hidden; text-overflow: ellipsis; }
+  .offline-note { color: var(--shadow); padding: 6px; text-align: center; }
+  .conn { background: #ffffe1; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="menubar"></div>
+  <div class="banner">
+    <img src="img/hotline-h.svg" alt="">
+    <div class="txt">
+      <div class="w1">Hotline</div>
+      <div class="w2" id="servername"></div>
+    </div>
+  </div>
+  <div class="me" id="me"></div>
+  <div class="tabs">
+    <div class="tab active" data-tab="online">Online</div>
+    <div class="tab" data-tab="setup">List Setup</div>
+  </div>
+  <div class="tabpanel">
+    <div class="pane tree" id="tree" tabindex="0"></div>
+    <div class="setupbtns" id="setupbtns" style="display:none">
+      <button id="b-addbuddy">Add Buddy</button>
+      <button id="b-addgroup">Add Group</button>
+      <button id="b-delete">Delete</button>
+    </div>
+    <div class="iconbar" id="iconbar">
+      <button class="ibtn" id="b-im" title="Send an Instant Message"></button>
+      <button class="ibtn" id="b-chat" title="Join a chat room"></button>
+      <button class="ibtn" id="b-info" title="Get Buddy Info"></button>
+      <button class="ibtn" id="b-away" title="Set an Away Message"></button>
+    </div>
+  </div>
+  <div class="statusbar"><div id="status"></div></div>
+</div>
+<script src="common.js"></script>
+<script>
+  let S = null;                 // the backend's view
+  let tab = 'online';
+  let sel = null;               // {type:'bud', login} | {type:'grp', name}
+  const collapsed = new Set(JSON.parse(localStorageGet('collapsed') || '[]'));
+  const doors = new Map();      // login -> {open, until}
+  let connNote = null;
+
+  function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+  function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+  setupWindow({ title: 'Buddy List', onClose: signOff });
+  $('#b-im').innerHTML = ICON.im + 'IM';
+  $('#b-chat').innerHTML = ICON.chat + 'Chat';
+  $('#b-info').innerHTML = ICON.info + 'Info';
+  $('#b-away').innerHTML = ICON.away + 'Away';
+
+  async function signOff() {
+    await invoke('sign_off');
+  }
+
+  setupMenus([
+    { title: 'My HIM', items: [
+      { label: 'Away Message...', action: () => invoke('open_dialog', { kind: 'away' }) },
+      { label: "I'm Back", disabled: () => !S || S.presence !== 'away', action: () => invoke('set_away', { message: null }) },
+      '-',
+      { label: 'Display Name...', action: () => invoke('open_dialog', { kind: 'name' }) },
+      { label: 'Edit Profile...', action: () => invoke('open_dialog', { kind: 'profile' }) },
+      { label: 'Buddy Icon...', action: () => invoke('open_dialog', { kind: 'icon' }) },
+      { label: 'Setup...', action: () => invoke('open_dialog', { kind: 'setup' }) },
+      '-',
+      { label: 'Sign Off', action: signOff },
+      { label: 'Exit', action: () => invoke('quit_app') },
+    ]},
+    { title: 'People', items: [
+      { label: 'Send Instant Message', action: sendIm },
+      { label: 'Get Buddy Info', action: getInfo },
+      '-',
+      { label: 'Add a Buddy...', action: () => invoke('open_dialog', { kind: 'addbuddy', arg: selectedGroup() }) },
+      { label: 'Find a Buddy...', action: () => invoke('open_dialog', { kind: 'find' }) },
+      { label: 'Join a Chat Room...', action: () => invoke('open_dialog', { kind: 'chatrooms' }) },
+      '-',
+      { label: 'Block Buddy', disabled: () => sel?.type !== 'bud', action: () => block(sel.login) },
+      { label: 'Rename Buddy...', disabled: () => !(sel?.type === 'bud' && buddy(sel.login)?.state === 'accepted'), action: () => invoke('open_dialog', { kind: 'group', arg: 'alias:' + sel.login }) },
+    ]},
+    { title: 'Help', items: [
+      { label: 'About HIM...', action: () => invoke('open_dialog', { kind: 'about' }) },
+    ]},
+  ]);
+
+  const buddy = login => S?.buddies.find(b => b.login === login);
+
+  // Every accepted/pending buddy belongs to exactly one local group; strays join the first.
+  function grouped() {
+    const groups = S.groups.map(g => ({ name: g.name, members: [] }));
+    const placed = new Set();
+    S.groups.forEach((g, i) => g.members.forEach(m => {
+      const b = buddy(m);
+      if (b && b.state !== 'blocked' && !placed.has(m)) { groups[i].members.push(b); placed.add(m); }
+    }));
+    S.buddies.filter(b => !placed.has(b.login) && (b.state === 'accepted' || b.state === 'pendingOut'))
+      .forEach(b => groups[0]?.members.push(b));
+    groups.forEach(g => g.members.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
+    return groups;
+  }
+
+  function isOn(b) { return b.state === 'accepted' && b.presence !== 'offline'; }
+
+  function budRow(b, mode) {
+    const d = doors.get(b.login);
+    const now = Date.now();
+    let icon = '', cls = [];
+    if (d && d.until > now) {
+      icon = d.open ? ICON.doorOpen : ICON.doorShut;
+      cls.push(d.open ? 'arrived' : 'gone');
+    } else if (b.state === 'pendingOut' || b.state === 'pendingIn') {
+      icon = ICON.pending; cls.push('pending');
+    } else if (b.state === 'blocked') {
+      cls.push('blocked');
+    } else if (b.presence === 'away') {
+      icon = ICON.note; cls.push('away');
+    } else if (b.presence === 'busy') {
+      icon = ICON.busy;
+    } else if (b.presence === 'offline') {
+      cls.push('offline');
+    }
+    if (sel?.type === 'bud' && sel.login === b.login) cls.push('sel');
+    let name = esc(b.name);
+    if (mode === 'setup' && b.state === 'pendingOut') name += ' <span style="font-style:normal">(awaiting reply)</span>';
+    const tip = [b.login !== b.name ? b.login : '', b.statusText ? `"${b.statusText}"` : '', b.presence !== 'offline' && b.state === 'accepted' ? b.presence : ''].filter(Boolean).join(' — ');
+    return `<div class="bud ${cls.join(' ')}" data-login="${esc(b.login)}" draggable="${mode === 'setup' && b.state !== 'blocked'}" title="${esc(tip)}"><span class="ic">${icon}</span><span class="nm">${name}</span>${b.unread ? `<span class="unread">${b.unread}</span>` : ''}</div>`;
+  }
+
+  function grpRow(name, on, total, mode) {
+    const shut = collapsed.has(name);
+    const isSel = sel?.type === 'grp' && sel.name === name;
+    return `<div class="grp${isSel ? ' sel' : ''}" data-grp="${esc(name)}"><span class="tri">${shut ? ICON.triShut : ICON.triOpen}</span><span class="gn">${esc(name)}</span>${mode === 'online' ? ` <span style="font-weight:normal">(${on}/${total})</span>` : ''}</div>`;
+  }
+
+  function render() {
+    if (!S) return;
+    // The name buddies see, so a leftover one is easy to spot (My HIM > Display Name).
+    setTitle(`${S.myName || S.login}'s Buddy List`);
+    $('#servername').textContent = S.serverName || S.server;
+    $('#servername').title = S.server;
+    const mine = S.presence === 'away' ? `${ICON.note}<span>${esc(S.myName || S.login)}</span><span class="st">(Away)</span>` : `<span>${esc(S.myName || S.login)}</span><span class="st">(${S.connected ? 'Online' : 'Offline'})</span>`;
+    $('#me').innerHTML = mine;
+    $('#b-away').innerHTML = S.presence === 'away' ? ICON.back + 'Back' : ICON.away + 'Away';
+    $('#b-away').title = S.presence === 'away' ? "I'm back" : 'Set an Away Message';
+
+    let html = '';
+    if (!S.connected) html += `<div class="offline-note">${ICON.plug} Not connected</div>`;
+    const groups = grouped();
+    if (tab === 'online') {
+      for (const g of groups) {
+        const on = g.members.filter(isOn);
+        html += grpRow(g.name, on.length, g.members.filter(b => b.state === 'accepted').length, 'online');
+        if (collapsed.has(g.name)) continue;
+        // just-signed-off buddies stay a moment with a closed door
+        const shown = g.members.filter(b => isOn(b) || (doors.get(b.login)?.until > Date.now()));
+        html += shown.map(b => budRow(b, 'online')).join('');
+      }
+    } else {
+      for (const g of groups) {
+        html += grpRow(g.name, 0, 0, 'setup');
+        if (collapsed.has(g.name)) continue;
+        html += g.members.map(b => budRow(b, 'setup')).join('');
+      }
+      const blocked = S.buddies.filter(b => b.state === 'blocked');
+      if (blocked.length) {
+        html += grpRow('Blocked', 0, 0, 'setup');
+        if (!collapsed.has('Blocked')) html += blocked.map(b => budRow(b, 'setup')).join('');
+      }
+    }
+    const tree = $('#tree');
+    const top = tree.scrollTop;
+    tree.innerHTML = html;
+    tree.scrollTop = top;
+    wireTree();
+
+    const status = $('#status');
+    status.classList.toggle('conn', !S.connected);
+    if (!S.connected) {
+      status.innerHTML = `${ICON.plug}<span>${esc(connNote || 'Connection lost. Reconnecting...')}</span>`;
+    } else {
+      const short = S.transport.startsWith('HOPE (ChaCha') ? 'HOPE' : S.transport.startsWith('HOPE') ? 'HOPE sign-in' : S.transport;
+      status.innerHTML = `${S.encrypted ? ICON.lock : ICON.unlock}<span>${esc(S.encrypted ? `Encrypted (${short})` : `Not encrypted (${short})`)}</span>`;
+    }
+    status.title = [S.transport, ...S.warnings].join('\n');
+  }
+
+  function wireTree() {
+    $$('#tree .grp').forEach(el => {
+      el.onclick = e => {
+        const name = el.dataset.grp;
+        if (e.target.closest('.tri') || e.detail === 2) {
+          collapsed.has(name) ? collapsed.delete(name) : collapsed.add(name);
+          localStorageSet('collapsed', JSON.stringify([...collapsed]));
+        }
+        sel = { type: 'grp', name };
+        render();
+      };
+      if (tab === 'setup' && el.dataset.grp !== 'Blocked') dropTarget(el, el.dataset.grp);
+    });
+    $$('#tree .bud').forEach(el => {
+      const login = el.dataset.login;
+      el.onclick = () => { sel = { type: 'bud', login }; render(); };
+      el.ondblclick = () => {
+        const b = buddy(login);
+        if (b?.state === 'accepted') invoke('open_im', { login });
+        else if (b?.state === 'pendingIn') invoke('open_dialog', { kind: 'request', arg: login });
+      };
+      el.ondragstart = e => { e.dataTransfer.setData('text/plain', login); };
+      if (tab === 'setup') {
+        const g = S.groups.find(g => g.members.includes(login))?.name || S.groups[0]?.name;
+        dropTarget(el, g);
+      }
+    });
+  }
+
+  function dropTarget(el, group) {
+    el.ondragover = e => { e.preventDefault(); el.classList.add('drop'); };
+    el.ondragleave = () => el.classList.remove('drop');
+    el.ondrop = e => {
+      e.preventDefault();
+      el.classList.remove('drop');
+      const login = e.dataTransfer.getData('text/plain');
+      if (login && group) invoke('move_buddy', { login, group }).catch(err => alertBox(String(err)));
+    };
+  }
+
+  function selectedGroup() {
+    if (sel?.type === 'grp') return sel.name;
+    if (sel?.type === 'bud') return S?.groups.find(g => g.members.includes(sel.login))?.name || '';
+    return '';
+  }
+
+  function sendIm() {
+    if (sel?.type === 'bud' && buddy(sel.login)?.state === 'accepted') invoke('open_im', { login: sel.login });
+    else invoke('open_dialog', { kind: 'addbuddy', arg: 'im:' });
+  }
+  function getInfo() {
+    if (sel?.type === 'bud') invoke('open_dialog', { kind: 'info', arg: sel.login });
+    else alertBox('Select a buddy first.', { icon: 'info' });
+  }
+  async function block(login) {
+    const b = buddy(login);
+    if (b?.state === 'blocked') {
+      if (await confirmBox(`Unblock ${b.name}? They won't be on your list anymore until one of you adds the other again.`)) invoke('unblock_buddy', { login }).catch(e => alertBox(String(e)));
+    } else if (await confirmBox(`Block ${b?.name || login}? They won't be able to message you or see when you're online.`)) {
+      invoke('block_buddy', { login }).catch(e => alertBox(String(e)));
+    }
+  }
+
+  $('#b-im').onclick = sendIm;
+  $('#b-info').onclick = getInfo;
+  $('#b-chat').onclick = () => invoke('open_dialog', { kind: 'chatrooms' });
+  $('#b-away').onclick = () => S?.presence === 'away' ? invoke('set_away', { message: null }) : invoke('open_dialog', { kind: 'away' });
+
+  $$('.tab').forEach(t => t.onclick = () => {
+    tab = t.dataset.tab;
+    $$('.tab').forEach(x => x.classList.toggle('active', x === t));
+    $('#setupbtns').style.display = tab === 'setup' ? 'flex' : 'none';
+    $('#iconbar').style.display = tab === 'setup' ? 'none' : 'flex';
+    render();
+  });
+
+  $('#b-addbuddy').onclick = () => invoke('open_dialog', { kind: 'addbuddy', arg: selectedGroup() });
+  $('#b-addgroup').onclick = () => invoke('open_dialog', { kind: 'group', arg: 'new:' });
+  $('#b-delete').onclick = async () => {
+    if (!sel) return alertBox('Select a buddy or a group first.', { icon: 'info' });
+    if (sel.type === 'grp') {
+      if (sel.name === 'Blocked') return;
+      if (await confirmBox(`Delete the group "${sel.name}"? Its buddies move to the first group.`)) {
+        invoke('delete_group', { name: sel.name }).catch(e => alertBox(String(e)));
+      }
+    } else {
+      const b = buddy(sel.login);
+      if (b?.state === 'blocked') return block(sel.login);
+      const what = b?.state === 'pendingOut' ? `Cancel your buddy request to ${b.name}?` : `Remove ${b?.name || sel.login} from your Buddy List? You'll disappear from theirs too.`;
+      if (await confirmBox(what)) invoke('remove_buddy', { login: sel.login }).catch(e => alertBox(String(e)));
+    }
+  };
+  // double-click a group in List Setup to rename it
+  $('#tree').addEventListener('dblclick', e => {
+    const g = e.target.closest('.grp');
+    if (g && tab === 'setup' && g.dataset.grp !== 'Blocked') invoke('open_dialog', { kind: 'group', arg: 'rename:' + g.dataset.grp });
+  });
+  $('#tree').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendIm();
+    if (e.key === 'Delete' || e.key === 'Backspace') $('#b-delete').click();
+  });
+
+  // ---------- events ----------
+  listen('state', e => { S = e.payload; render(); });
+  listen('door', e => {
+    const { login, open } = e.payload;
+    doors.set(login, { open, until: Date.now() + 10000 });
+    open ? Sound.doorOpen() : Sound.doorClose();
+    render();
+    setTimeout(render, 10100);
+  });
+  listen('im', e => {
+    const { line } = e.payload;
+    if (line.dir === 'in') Sound.imReceive();
+  });
+  listen('connection', e => {
+    const p = e.payload;
+    if (p.state === 'lost') connNote = `Connection lost (${p.reason}). Reconnecting...`;
+    if (p.state === 'reconnecting') connNote = 'Reconnecting...';
+    if (p.state === 'failed') { connNote = `Sign-on failed: ${p.reason}`; alertBox(`You were signed off and couldn't sign back on:\n${p.reason}`); }
+    if (p.state === 'online') connNote = null;
+    render();
+  });
+  listen('notice', e => { Sound.alert(); alertBox(e.payload, { icon: 'info', title: 'Message from the server' }); });
+
+  (async () => {
+    await loadSoundPref();
+    S = await invoke('get_state');
+    render();
+    if (S.warnings?.length) alertBox(S.warnings.join('\n\n'), { title: 'Connection security' });
+  })();
+</script>
+</body>
+</html>

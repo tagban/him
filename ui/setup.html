@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Setup</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .snd { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+  .snd .what { width: 100px; flex: none; }
+  .snd .file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #404040; }
+  .snd button { min-width: 0; padding: 1px 6px; min-height: 19px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <fieldset>
+      <legend>Sounds &amp; display</legend>
+      <label class="check"><input type="checkbox" id="sounds"> Play sounds (doors, new messages)</label>
+      <label class="check" style="margin-top:5px"><input type="checkbox" id="timestamps"> Show timestamps in IM windows</label>
+      <label class="check" style="margin-top:5px"><input type="checkbox" id="smileys"> Show smileys as pictures</label>
+      <div class="row" style="margin-top:6px"><label class="lbl" for="size" style="width:auto">IM text size</label>
+        <select id="size" style="flex:none;width:90px"><option value="10">Small</option><option value="12">Normal</option><option value="14">Large</option><option value="16">Larger</option></select></div>
+    </fieldset>
+    <fieldset>
+      <legend>Sounds</legend>
+      <div class="hint" style="font-size:10px;margin-bottom:4px">HIM has its own door and message sounds. To use others (the classic ones from an old install, say), choose a file for each.</div>
+      <div id="soundlist"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Away</legend>
+      <label class="check"><input type="checkbox" id="auto"> Send my away message once to each buddy who IMs me</label>
+    </fieldset>
+    <fieldset>
+      <legend>Privacy</legend>
+      <label class="check"><input type="checkbox" id="disc"> List me in the server's buddy directory</label>
+      <div class="hint" style="margin-top:4px;font-size:10px">When off, people can still add you if they know your exact screen name.</div>
+    </fieldset>
+    <div class="error" id="err"></div>
+    <div class="buttons"><button class="default" id="ok">OK</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Setup', minimize: false });
+  (async () => {
+    const p = (await invoke('get_settings')).prefs;
+    $('#sounds').checked = p.sounds;
+    $('#timestamps').checked = p.timestamps;
+    $('#smileys').checked = p.smileys !== false;
+    $('#auto').checked = p.autoResponse;
+    $('#disc').checked = p.discoverable;
+    $('#size').value = String(p.fontSize);
+    $('#ok').onclick = async () => {
+      try {
+        // Re-read first: sound picks save on their own while this window is open.
+        const cur = (await invoke('get_settings')).prefs;
+        await invoke('save_prefs', { prefs: { ...cur, sounds: $('#sounds').checked, timestamps: $('#timestamps').checked, smileys: $('#smileys').checked, autoResponse: $('#auto').checked, discoverable: $('#disc').checked, fontSize: +$('#size').value } });
+        thisWindow.close();
+      } catch (e) { $('#err').textContent = String(e); }
+    };
+  })();
+  $('#cancel').onclick = () => thisWindow.close();
+
+  const EVENTS = [['buddyIn', 'Buddy signs on'], ['buddyOut', 'Buddy signs off'], ['imReceive', 'IM received'], ['imSend', 'IM sent']];
+  function renderSounds(p) {
+    const cs = p.customSounds || {};
+    $('#soundlist').innerHTML = EVENTS.map(([k, label]) => {
+      const f = cs[k] ? cs[k].split('|')[1] || cs[k] : '';
+      return `<div class="snd" data-k="${k}"><span class="what">${label}</span><span class="file" title="${esc(f)}">${f ? esc(f) : '<i>HIM sound</i>'}</span>` +
+        `<button class="play" title="Play">▶</button><button class="pick">Choose...</button><button class="clear"${f ? '' : ' disabled'}>Default</button></div>`;
+    }).join('');
+    $$('.snd').forEach(row => {
+      const k = row.dataset.k;
+      $('.play', row).onclick = () => Sound.preview(k);
+      $('.pick', row).onclick = async () => { try { await invoke('pick_sound', { kind: k }); } catch (e) { alertBox(String(e)); } };
+      $('.clear', row).onclick = () => invoke('clear_sound', { kind: k });
+    });
+  }
+  loadSoundPref();
+  invoke('get_settings').then(s => renderSounds(s.prefs));
+  listen('prefs', e => renderSounds(e.payload));
+</script>
+</body>
+</html>

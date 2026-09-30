@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Display Name</title>
+<link rel="stylesheet" href="aim.css">
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div>Your buddies see you as:</div>
+    <input type="text" id="name" maxlength="64" spellcheck="false">
+    <div class="hint" id="hint" style="font-size:10px"></div>
+    <div class="error" id="err"></div>
+    <div class="buttons"><button class="default" id="ok">Save</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Display Name', minimize: false });
+  (async () => {
+    const s = await invoke('get_state');
+    $('#name').value = s.myName || s.login;
+    $('#hint').textContent = `Leave it empty to be shown by your screen name, ${s.login}. It's saved on the server, so it follows you to any computer.`;
+    $('#name').select();
+  })();
+  async function save() {
+    $('#err').textContent = '';
+    try { await invoke('set_display_name', { name: $('#name').value }); thisWindow.close(); }
+    catch (e) { $('#err').textContent = String(e); }
+  }
+  $('#ok').onclick = save;
+  $('#name').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  $('#cancel').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

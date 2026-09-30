@@ -1,0 +1,22 @@
+//! Client side of the Hotline Instant Messaging extension, written from
+//! fogWraith's specification (github.com/fogWraith/Hotline, Docs/IM and
+//! Docs/Protocol).
+
+pub mod client;
+pub mod frame;
+pub mod hope;
+pub mod icon;
+pub mod info;
+pub mod messaging;
+pub mod text;
+pub mod tls;
+pub mod tracker;
+pub mod wire;
+
+#[cfg(any(test, feature = "mock-server"))]
+pub mod mock;
+
+pub use client::{connect, Client, ConnectOptions, Error, Event, LoginInfo, Security, Session};
+pub use messaging::{
+    AckKind, ChatUser, IncomingMessage, Presence, PresenceUpdate, Profile, RosterEntry, RosterState,
+};

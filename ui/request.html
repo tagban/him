@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buddy Request</title>
+<link rel="stylesheet" href="aim.css">
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="row" style="align-items:flex-start;gap:10px">
+      <span class="dlg-icon" id="icon"></span>
+      <div>
+        <div id="text"></div>
+        <div id="note" style="margin-top:6px;font-style:italic"></div>
+      </div>
+    </div>
+    <div class="error" id="err"></div>
+    <div class="buttons">
+      <button id="block">Block</button>
+      <span class="grow"></span>
+      <button class="default" id="yes">Accept</button>
+      <button id="no">Decline</button>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  const login = param('a');
+  setupWindow({ title: 'Buddy Request', minimize: false });
+  $('#icon').innerHTML = ICON.addbuddy;
+  $('#text').innerHTML = `<b>${esc(login)}</b> would like to add you to their Buddy List. If you accept, you'll each see when the other is online.`;
+  Sound.alert();
+  invoke('get_request_note', { login }).then(n => { if (n) $('#note').textContent = `"${n}"`; });
+
+  async function answer(cmd, args) {
+    $$('button').forEach(b => b.disabled = true);
+    try { await invoke(cmd, args); thisWindow.close(); }
+    catch (e) { $('#err').textContent = String(e); $$('button').forEach(b => b.disabled = false); }
+  }
+  $('#yes').onclick = () => answer('respond_request', { login, accept: true });
+  $('#no').onclick = () => answer('respond_request', { login, accept: false });
+  $('#block').onclick = () => answer('block_buddy', { login });
+</script>
+</body>
+</html>

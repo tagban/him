@@ -1,0 +1,26 @@
+[package]
+name = "him"
+version = "0.1.0"
+license = "MIT"
+description = "HIM, the Hotline Instant Messenger: a late-90s buddy list for the Hotline IM network"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-opener = "2"
+# fetching one Buddy Icon from a link the user pasted
+ureq = { version = "2", default-features = false, features = ["tls"] }
+hotline-im = { path = "../hotline-im" }
+# scaling Buddy Icons to 48 x 48 before they're sent
+image = { version = "0.25", default-features = false, features = ["gif", "png", "jpeg"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }

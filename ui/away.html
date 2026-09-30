@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Away Message</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  textarea { flex: 1; resize: none; min-height: 80px; font-family: Arial, sans-serif; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="row"><label class="lbl" for="pick" style="width:60px">Message</label><select id="pick"></select></div>
+    <div class="row"><label class="lbl" for="label" style="width:60px">Label</label><input type="text" id="label" maxlength="40"></div>
+    <div class="hint">Enter the message your buddies will see while you're away:</div>
+    <textarea id="text" maxlength="500"></textarea>
+    <label class="check"><input type="checkbox" id="save" checked> Save for later use</label>
+    <div class="error" id="err"></div>
+    <div class="buttons">
+      <button id="delete">Delete</button>
+      <span class="grow"></span>
+      <button class="default" id="go">I'm Away</button>
+      <button id="cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Away Message', minimize: false });
+  let msgs = [];
+  const NEW = '__new';
+
+  function fillPick(sel) {
+    $('#pick').innerHTML = msgs.map((m, i) => `<option value="${i}">${esc(m.label)}</option>`).join('') + `<option value="${NEW}">(New Message)</option>`;
+    $('#pick').value = sel ?? (msgs.length ? '0' : NEW);
+    show();
+  }
+  function show() {
+    const v = $('#pick').value;
+    const m = v === NEW ? { label: '', text: '' } : msgs[+v];
+    $('#label').value = m.label;
+    $('#text').value = m.text;
+    $('#delete').disabled = v === NEW;
+  }
+  $('#pick').onchange = show;
+
+  (async () => {
+    msgs = (await invoke('get_settings')).awayMessages;
+    fillPick();
+    $('#text').focus();
+  })();
+
+  $('#delete').onclick = async () => {
+    const v = $('#pick').value;
+    if (v === NEW) return;
+    msgs.splice(+v, 1);
+    await invoke('save_away_messages', { messages: msgs });
+    fillPick();
+  };
+
+  $('#go').onclick = async () => {
+    const text = $('#text').value.trim();
+    if (!text) return ($('#err').textContent = 'Type an away message.');
+    if ($('#save').checked) {
+      const label = $('#label').value.trim() || text.slice(0, 24);
+      const v = $('#pick').value;
+      if (v === NEW) msgs.push({ label, text }); else msgs[+v] = { label, text };
+      await invoke('save_away_messages', { messages: msgs });
+    }
+    try {
+      await invoke('set_away', { message: text });
+      thisWindow.close();
+    } catch (e) { $('#err').textContent = String(e); }
+  };
+  $('#cancel').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

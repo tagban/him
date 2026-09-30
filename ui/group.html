@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Group</title>
+<link rel="stylesheet" href="aim.css">
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div id="intro"></div>
+    <input type="text" id="name" maxlength="48" spellcheck="false">
+    <div class="error" id="err"></div>
+    <div class="buttons"><button class="default" id="ok">OK</button><button id="cancel">Cancel</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  // a = "new:", "rename:<group>" or "alias:<login>"
+  const a = param('a');
+  const [mode, ...rest] = a.split(':');
+  const target = rest.join(':');
+  const title = { new: 'Add Group', rename: 'Rename Group', alias: 'Rename Buddy' }[mode] || 'Group';
+  setupWindow({ title, minimize: false });
+  $('#intro').textContent = {
+    new: 'Name of the new group:',
+    rename: `New name for "${target}":`,
+    alias: `What should ${target} be called on your Buddy List? Leave it empty to use their own name. Only you see this.`,
+  }[mode] || '';
+  if (mode === 'rename') $('#name').value = target;
+  if (mode === 'alias') invoke('get_state').then(s => { const b = s.buddies.find(x => x.login === target); $('#name').value = b?.nickname || ''; $('#name').select(); });
+  $('#name').focus();
+  $('#ok').onclick = async () => {
+    const v = $('#name').value;
+    try {
+      if (mode === 'new') await invoke('add_group', { name: v });
+      else if (mode === 'rename') await invoke('rename_group', { old: target, name: v });
+      else if (mode === 'alias') await invoke('set_alias', { login: target, alias: v });
+      thisWindow.close();
+    } catch (e) { $('#err').textContent = String(e); }
+  };
+  $('#name').addEventListener('keydown', e => { if (e.key === 'Enter') $('#ok').click(); });
+  $('#cancel').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buddy Icons</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .grid { flex: 1; min-height: 0; overflow-y: auto; background: #fff; padding: 4px;
+    display: grid; grid-template-columns: repeat(auto-fill, 56px); grid-auto-rows: 56px; gap: 4px; justify-content: center; align-content: start; }
+  .cell { display: grid; place-items: center; cursor: default; border: 1px solid transparent; }
+  .cell img { width: 48px; height: 48px; }
+  .cell:hover { border-color: #c0c0c0; }
+  .cell.sel { border: 1px dotted #000; background: var(--select); }
+  .top { display: flex; gap: 6px; align-items: center; }
+  .top input { flex: 1; min-width: 0; }
+  .count { color: #505050; white-space: nowrap; }
+  .chosen { color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="top"><label for="q">Find:</label><input type="text" id="q" spellcheck="false" placeholder="Name"><span class="count" id="count"></span></div>
+    <div class="pane grid" id="grid"></div>
+    <div class="chosen" id="chosen">Click an icon, then Use This Icon (or double-click it).</div>
+    <div class="error" id="err"></div>
+    <div class="buttons">
+      <span class="grow"></span>
+      <button class="default" id="use" disabled>Use This Icon</button>
+      <button id="close">Close</button>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Buddy Icons', minimize: false });
+  let all = [], sel = null;
+  const urls = new Map();
+
+  // Pictures load as their cells scroll into view: a collection can hold thousands.
+  const seen = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      seen.unobserve(e.target);
+      const n = +e.target.dataset.n;
+      invoke('gallery_image', { n }).then(bytes => {
+        const url = URL.createObjectURL(new Blob([bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)]));
+        urls.set(n, url);
+        e.target.innerHTML = `<img src="${url}" alt="">`;
+      }).catch(() => {});
+    }
+  }, { root: $('#grid'), rootMargin: '120px' });
+
+  function render() {
+    const q = $('#q').value.trim().toLowerCase();
+    const shown = q ? all.filter(([, t]) => t.toLowerCase().includes(q)) : all;
+    $('#count').textContent = `${shown.length} icon${shown.length === 1 ? '' : 's'}`;
+    $('#grid').innerHTML = shown.map(([n, t]) =>
+      `<div class="cell${n === sel ? ' sel' : ''}" data-n="${n}" title="${esc(t)}">${urls.has(n) ? `<img src="${urls.get(n)}" alt="">` : ''}</div>`).join('');
+    $$('.cell', $('#grid')).forEach(c => {
+      if (!urls.has(+c.dataset.n)) seen.observe(c);
+      c.onclick = () => pick(+c.dataset.n);
+      c.ondblclick = () => { pick(+c.dataset.n); use(); };
+    });
+  }
+
+  function pick(n) {
+    sel = n;
+    $$('.cell.sel').forEach(c => c.classList.remove('sel'));
+    $(`.cell[data-n="${n}"]`)?.classList.add('sel');
+    $('#chosen').textContent = all.find(x => x[0] === n)?.[1] || '';
+    $('#use').disabled = false;
+  }
+
+  async function use() {
+    if (sel === null) return;
+    $('#err').textContent = '';
+    $('#use').disabled = true;
+    try { await invoke('gallery_use', { n: sel }); thisWindow.close(); }
+    catch (e) { $('#err').textContent = String(e); $('#use').disabled = false; }
+  }
+
+  let t = null;
+  $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 150); });
+  $('#use').onclick = use;
+  $('#close').onclick = () => thisWindow.close();
+  (async () => {
+    try { all = await invoke('gallery_list'); render(); $('#q').focus(); }
+    catch (e) { $('#err').textContent = String(e); }
+  })();
+</script>
+</body>
+</html>

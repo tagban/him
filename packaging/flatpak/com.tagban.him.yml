@@ -1,0 +1,38 @@
+# Flatpak for HIM. CI builds the app with Tauri as a .deb first (Ubuntu 22.04, whose
+# glibc is older than the runtime's), then this repackages it on the GNOME runtime,
+# which already carries WebKitGTK 4.1.
+app-id: com.tagban.him
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: him
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --share=network
+  - --socket=pulseaudio
+  # Saved passwords go to the desktop's keyring (Secret Service).
+  - --talk-name=org.freedesktop.secrets
+modules:
+  - name: him
+    buildsystem: simple
+    sources:
+      - type: file
+        path: him.deb
+      - type: file
+        path: com.tagban.him.metainfo.xml
+    build-commands:
+      - ar -x him.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/him /app/bin/him
+      - install -Dm644 usr/share/applications/*.desktop /app/share/applications/com.tagban.him.desktop
+      - sed -i -e 's/^Icon=.*/Icon=com.tagban.him/' -e 's/^Exec=.*/Exec=him/' /app/share/applications/com.tagban.him.desktop
+      - |
+        for d in usr/share/icons/hicolor/*/apps; do
+          size=$(basename "$(dirname "$d")")
+          case "$size" in *@*) continue ;; esac
+          install -Dm644 "$d"/*.png "/app/share/icons/hicolor/$size/apps/com.tagban.him.png"
+        done
+      - install -Dm644 com.tagban.him.metainfo.xml /app/share/metainfo/com.tagban.him.metainfo.xml

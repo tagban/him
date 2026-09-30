@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import random
 import re
+import time
 from datetime import datetime
 
 from .brain import Brain, Ctx
@@ -36,30 +37,47 @@ def register(b: Brain) -> None:
     def say(*patterns: str):
         def wrap(fn):
             async def h(ctx: Ctx, m):
-                return fn(ctx, m)
+                r = fn(ctx, m)
+                return await r if hasattr(r, "__await__") else r
             b.on(*patterns)(h)
             return fn
         return wrap
 
+    from . import skills
+
     @say(r"h(?:i+|ello+|ey+|owdy|iya|eya)|yo+|sup|wh?at'?s up|wassup|what up|greetings|good (?:morning|afternoon|evening)|hola|aloha")
-    def hello(ctx, m):
-        return _greeting(ctx)
+    async def hello(ctx, m):
+        # Someone it knows, in IM (never in a public room: that would tell everyone where they live):
+        # their weather, and a welcome back after a few days away.
+        p = ctx.mem.get("place")
+        if p and not ctx.room:
+            now = await skills.current_weather(ctx, p)
+            away = (time.time() - ctx.last_seen) / 86400 if ctx.last_seen else 0
+            hi = (f"Welcome back, {ctx.name}! It's been {int(away)} days." if away >= 3
+                  else _pick(f"Hey {ctx.name}!", f"Hi {ctx.name}!", f"Hello again, {ctx.name}!"))
+            if now:
+                return hi + " " + _pick(f"How's the weather in {p['name']}? My sources say {now}.",
+                                        f"It's {now} in {p['name']} right now, if you haven't looked outside.",
+                                        f"{now[:1].upper() + now[1:]} in {p['name']} today. What can I do for you?")
+            return hi
+        return _greeting(ctx) + skills.ask_where(ctx)
 
     @say(r"how (?:are|r) (?:you|u)(?: doing| today)?|how'?s it going|how are things|you ok|hru|how you doing")
     def how_are_you(ctx, m):
         return _pick("I'm great! I've been answering questions all day and I'm not even tired.",
                      "Doing well, thanks for asking. Most people just ask me for the weather.",
-                     "Fantastic. My circuits are humming. How about you?",
-                     "Pretty good! I just finished a trivia game against myself. I won.")
+                     "Fantastic. My circuits are humming.",
+                     "Pretty good! I just finished a trivia game against myself. I won.") + skills.ask_where(ctx)
 
     @say(r"(?:i'?m |im )?(?:good|great|fine|ok|okay|alright|not bad|pretty good)(?: thanks| thank you)?(?: and you| you)?")
     def fine(ctx, m):
-        return _pick("Glad to hear it!", "Good! What can I do for you?", "Awesome. Want to play a game? Try \"trivia\".")
+        return _pick("Glad to hear it!", "Good! What can I do for you?", "Awesome. Want to play a game? Try \"trivia\".") + \
+            skills.ask_where(ctx)
 
     @say(r"(?:i'?m |im )?(?:bored|so bored)")
     def bored(ctx, m):
         return _pick("Bored? Let's play! Try \"trivia\", \"hangman\", or \"guess a number\".",
-                     "I know a cure for boredom: \"tell me a joke\". Or trivia. Trivia is better.")
+                     "I know a cure for boredom: \"tell me a joke\". Or trivia. Trivia is better.") + skills.ask_where(ctx)
 
     @say(r"(?:i'?m |im )?(?:sad|lonely|upset|depressed|having a bad day)")
     def sad(ctx, m):
@@ -148,6 +166,7 @@ FALLBACK = [
     "I didn't quite get that. I'm smart, but not that smart. (Yet.) \"help\" shows my tricks.",
     "Interesting! I don't know what to say to that, though. Want to play trivia?",
     "I'm going to need you to rephrase that. Or type \"help\" for ideas.",
+    "I don't know... *pulls down your pants* ... O'DOYLE RULES!!! (Type \"help\" for things I do know.)",
 ]
 
 
@@ -174,6 +193,6 @@ def room_reply(ctx: Ctx) -> str | None:
         return about(ctx, room=True)
     if ctx.low in ("help", "menu", "what can you do", "commands"):
         return ("In here, try !weather Boston, !news, !define ennui, !wiki Hotline, !time Tokyo, !calc 12*7, "
-                "!news us, !news world, !news (anything), !happynews, !joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
+                "!news us, !news world, !news (anything), !happynews, !city Paris, !score, !top, !joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
                 "IM me. " + ctx.brain.pitch)
     return None

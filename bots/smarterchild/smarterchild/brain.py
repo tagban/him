@@ -50,10 +50,11 @@ class Mode:
 class Ctx:
     """One incoming message, with what the brain knows about its sender."""
 
-    def __init__(self, brain: "Brain", login: str, text: str):
-        self.brain, self.login, self.raw = brain, login, text
+    def __init__(self, brain: "Brain", login: str, text: str, room: bool = False):
+        self.brain, self.login, self.raw, self.room = brain, login, text, room
         self.text = normalize(text)
         self.low = self.text.lower()
+        self.last_seen = 0
 
     @property
     def mem(self) -> dict:
@@ -105,7 +106,7 @@ class Brain:
     async def answer(self, login: str, text: str, room: bool = False) -> list[str]:
         """The replies to one message. `room`: said in a public chat, where there's no
         introduction, no games (they'd take over the room) and nothing long."""
-        ctx = Ctx(self, login, text)
+        ctx = Ctx(self, login, text, room)
         if room:
             from .personality import room_reply
             r = room_reply(ctx)
@@ -113,6 +114,7 @@ class Brain:
                 return [r]
         mem = ctx.mem
         first = not mem.get("seen")
+        ctx.last_seen = mem.get("seen", 0)  # before this message, for "welcome back"
         mem["seen"] = int(time.time())
         mem["count"] = mem.get("count", 0) + 1
         self.memory.store.save()

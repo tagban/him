@@ -35,6 +35,8 @@ COMMANDS = {
     "happynews": "happy news", "goodnews": "happy news", "happy": "happy news", "good": "happy news",
     "sc": "", "smarterchild": "", "help": "help", "commands": "help", "about": "who are you",
     "whoami": "who are you", "info": "who are you",
+    "city": "city", "place": "city", "town": "city", "where": "city",
+    "score": "trivia score", "top": "leaderboard", "leaderboard": "leaderboard", "trivia": "trivia",
 }
 NATURAL = re.compile(r"(?:what'?s |how'?s )?(?:the )?(?:weather|forecast)(?: like)? (?:in|for|at) .{2,60}", re.I)
 

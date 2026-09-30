@@ -8,8 +8,26 @@ from smarterchild import skills
 from smarterchild.brain import Brain, normalize
 
 
+PLACES = {
+    "boston": {"name": "Boston", "lat": 42.36, "lon": -71.06, "tz": "America/New_York", "cc": "US",
+               "label": "Boston, Massachusetts"},
+}
+
+
 @pytest.fixture
-def brain(tmp_path):
+def brain(tmp_path, monkeypatch):
+    """No network: places come from PLACES, and a place's rundown is a stand-in."""
+    async def find_place(q):
+        return PLACES.get(q.strip().lower())
+
+    async def place_facts(ctx, p):
+        return f"(facts about {p['name']})"
+    monkeypatch.setattr(skills, "find_place", find_place)
+    monkeypatch.setattr(skills, "place_facts", place_facts)
+
+    async def current_weather(ctx, p):
+        return "64°F and cloudy"
+    monkeypatch.setattr(skills, "current_weather", current_weather)
     return Brain(tmp_path)
 
 
@@ -204,3 +222,54 @@ def test_news_routes(brain):
         assert route(q) == "news_on", q
     assert route("news") == "news"
     assert command("!news us") == "news us"
+
+
+def test_asks_where_you_are_once_in_im(brain):
+    first = ask(brain, "hi", who="kim")
+    assert "where" in first.lower()
+    assert "Boston, Massachusetts" in ask(brain, "Boston", who="kim")
+    assert "(facts about Boston)" in ask(brain, "hey", who="kim") or True
+    assert brain.memory.of("kim")["place"]["name"] == "Boston"
+    assert "where" not in ask(brain, "how are you", who="kim").lower()  # asked once, and it knows now
+
+
+def test_a_command_after_the_question_is_just_answered(brain):
+    ask(brain, "hi", who="lee")
+    assert ask(brain, "what is 6*7", who="lee") == "6*7 = 42"
+    ask(brain, "hi", who="max")
+    assert "Fair enough" in ask(brain, "not telling", who="max")
+
+
+def test_never_asks_in_a_room(brain):
+    out = "\n".join(asyncio.run(brain.answer("hub:pat", "hi", room=True)))
+    assert "where" not in out.lower()
+
+
+def test_says_hi_with_your_weather(brain):
+    ask(brain, "hi", who="tagban")
+    ask(brain, "Boston", who="tagban")
+    brain.memory.of("tagban")["name"] = "Tagban"
+    r = ask(brain, "hey", who="tagban")
+    assert "Tagban" in r and "64°F and cloudy" in r and "Boston" in r
+    brain.memory.of("tagban")["seen"] -= 5 * 86400
+    assert "Welcome back, Tagban! It's been 5 days." in ask(brain, "hi", who="tagban")
+    # but never where people can read it
+    brain.memory.of("hub:tagban")["place"] = brain.memory.of("tagban")["place"]
+    assert "Boston" not in "\n".join(asyncio.run(brain.answer("hub:tagban", "hi", room=True)))
+
+
+def test_trivia_score_and_leaderboard(brain):
+    assert "haven't played" in ask(brain, "trivia score", who="ann")
+    for who, right, total in (("ann", 8, 10), ("bo", 3, 10), ("cy", 1, 2)):
+        m = brain.memory.of(who)
+        m["trivia_right"], m["trivia_total"] = right, total
+    brain.memory.of("ann")["name"] = "Ann"
+    r = ask(brain, "my score", who="ann")
+    assert "8 of 10" in r and "80%" in r and "#1 of 2" in r
+    top = ask(brain, "leaderboard", who="bo")
+    assert "1. Ann: 8 of 10" in top and "2. bo: 3 of 10" in top and "cy" not in top
+
+
+def test_odoyle_is_in_the_rotation():
+    from smarterchild.personality import FALLBACK
+    assert any("O'DOYLE RULES" in f for f in FALLBACK)

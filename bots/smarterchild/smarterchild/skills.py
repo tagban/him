@@ -28,7 +28,7 @@ MENU = [
     ("Math and conversions", "what is 15% of 80, 12*(3+4), 10 km in miles, 72 f in c"),
     ("Time around the world", "what time is it in Tokyo, time in London"),
     ("Reminders", "remind me in 20 minutes to check the oven, remind me at 5pm to call Mom, my reminders"),
-    ("Games", "trivia, hangman, guess a number, rock paper scissors, 8 ball will I win, roll 2d6, flip a coin"),
+    ("Games", "trivia, trivia score, leaderboard, hangman, guess a number, rock paper scissors, 8 ball will I win, roll 2d6, flip a coin"),
     ("News", "news, news us, news world, news tech, news science, news sports, news war, news (anything), happy news"),
     ("Hotline chat rooms", "chat rooms, who's on Hotline"),
     ("On this day", "on this day, today in history"),
@@ -68,6 +68,7 @@ def register(b: Brain) -> None:
         return menu_item(int(m[1]))
 
     _memory(b)
+    _places(b)
     _reminders(b)
     _weather(b)
     _time(b)
@@ -136,6 +137,24 @@ def units_for(ctx: Ctx, place: dict) -> str:
 
 # ---------- about you ----------
 
+def _places(b: Brain) -> None:
+    @b.on(r"(?:tell me about|facts about|info on|about|what'?s) (?:the )?(?:city|town|place) (?:of |called )?(.{2,60})",
+          r"(?:city|town|place) (.{2,60})")
+    async def city(ctx: Ctx, m):
+        p = await find_place(m[1])
+        if not p:
+            return f"I couldn't find \"{m[1]}\" on the map."
+        return f"{p['label']}:\n" + await place_facts(ctx, p)
+
+    @b.on(r"(?:tell me )?about (?:my|where i live|my (?:city|town|place))|where am i")
+    async def my_city(ctx: Ctx, m):
+        p = ctx.mem.get("place")
+        if not p:
+            ctx.start(_place_mode)
+            return "You haven't told me! Where are you?"
+        return f"{p['label']}:\n" + await place_facts(ctx, p)
+
+
 def _memory(b: Brain) -> None:
     @b.on(r"(?:my name is|call me|i'?m called|you can call me)\s+([a-z][\w' .-]{0,30})")
     async def set_name(ctx: Ctx, m):
@@ -155,7 +174,8 @@ def _memory(b: Brain) -> None:
         if not p:
             return f"Hmm, I couldn't find \"{m[1]}\" on the map. Try a city, like \"Portland, OR\"."
         ctx.remember("place", p)
-        return f"Got it, {p['label']}. Now \"weather\" and \"time\" will use that."
+        return f"Got it, {p['label']}! Now \"weather\" and \"time\" will use that. A bit about it:\n" + \
+            await place_facts(ctx, p)
 
     @b.on(r"where do i live|what'?s my (?:location|city)")
     async def get_place(ctx: Ctx, m):
@@ -214,6 +234,96 @@ def _memory(b: Brain) -> None:
     async def forget(ctx: Ctx, m):
         ctx.start(forget_mode)
         return "Forget everything you've told me? (yes/no)"
+
+
+# ---------- a place: a line about it, its weather, its time, its news ----------
+
+async def place_facts(ctx: Ctx, p: dict) -> str:
+    region = p["label"].split(", ", 1)[-1] if ", " in p["label"] else ""
+
+    async def about():
+        try:
+            s = await web.get_json("https://en.wikipedia.org/w/api.php", {
+                "action": "opensearch", "search": p["label"], "limit": 1, "namespace": 0, "format": "json"}, ttl=86400)
+            if not s[1]:
+                return None
+            page = await web.get_json(f"https://en.wikipedia.org/api/rest_v1/page/summary/{web.quote(s[1][0])}",
+                                      ttl=86400)
+            first = _chunks(page.get("extract") or "", 240)
+            return first[0] if first else None
+        except Exception:
+            return None
+
+    async def weather():
+        now = await current_weather(ctx, p)
+        return f"It's {now} there" if now else None
+
+    async def news():
+        try:
+            import urllib.parse
+            items = await headlines("https://news.google.com/rss/search?" + urllib.parse.urlencode(
+                {"q": f"{p['name']} {region}".strip(), "hl": "en-US", "gl": "US", "ceid": "US:en"}), limit=2)
+            return items
+        except Exception:
+            return []
+
+    fact, wx, local = await asyncio.gather(about(), weather(), news())
+    try:
+        t = datetime.now(ZoneInfo(p["tz"])).strftime("%-I:%M %p")
+    except Exception:
+        t = None
+    lines = []
+    if fact:
+        lines.append(fact)
+    if wx or t:
+        lines.append(" and ".join(x for x in (wx, f"it's {t} there" if wx else f"It's {t} there") if x) + ".")
+    if local:
+        lines.append("Local news: " + " / ".join(local))
+    return "\n".join(lines) or f"I found {p['label']} on the map, but the rest of the internet is being quiet about it."
+
+
+async def current_weather(ctx: Ctx, p: dict) -> str | None:
+    """ "64°F and cloudy" at a place, in its units (or the person's), or None."""
+    try:
+        units = units_for(ctx, p)
+        d = await web.get_json("https://api.open-meteo.com/v1/forecast", {
+            "latitude": p["lat"], "longitude": p["lon"], "current": "temperature_2m,weather_code",
+            "temperature_unit": "celsius" if units == "c" else "fahrenheit", "timezone": "auto"}, ttl=600)
+        c = d["current"]
+        return f"{round(c['temperature_2m'])}°{units.upper()} and {WMO.get(c['weather_code'], 'weird out')}"
+    except Exception:
+        return None
+
+
+async def _place_mode(ctx: Ctx):
+    """The answer to "where are you?": a place gets its rundown; anything else is a new message."""
+    ctx.end()
+    if re.fullmatch(r"(?:no|nope|nah|not telling|none of your business|nowhere|private|secret|pass|rather not)(?: .*)?",
+                    ctx.low):
+        return "Fair enough! A robot can't be too careful either."
+    text = re.sub(r"^(?:i'?m |i am |im )?(?:in |from |at |near |living in |live in )?", "", ctx.text, flags=re.I)
+    if "?" in ctx.raw or len(text.split()) > 5 or re.search(r"\d\s*[-+*/^%x]\s*\d", text):
+        return None
+    catch_alls = {"calc", "wiki", "number", "eight", "filler", "lol", "compliment", "rude", "hello", "fine"}
+    if any(s.handler.__name__ not in catch_alls and s.pattern.fullmatch(ctx.text) for s in ctx.brain.skills):
+        return None  # a command after all: answer it
+    p = await find_place(text)
+    if not p:
+        return None
+    ctx.remember("place", p)
+    return f"Oh nice, {p['label']}!\n" + await place_facts(ctx, p)
+
+
+def ask_where(ctx: Ctx) -> str:
+    """Once per person, in IM: ask where they are (and remember having asked)."""
+    if ctx.room or ctx.mem.get("place") or ctx.mem.get("asked_place"):
+        return ""
+    ctx.mem["asked_place"] = True
+    ctx.brain.memory.store.save()
+    ctx.start(_place_mode)
+    return " " + random.choice(["By the way, where are you? (A city is fine.)",
+                                "So where are you writing from?",
+                                "Where in the world are you, anyway?"])
 
 
 # ---------- reminders ----------
@@ -964,6 +1074,17 @@ async def _number_mode(ctx: Ctx):
     return "Higher!" if n < st["n"] else "Lower!"
 
 
+def _trivia_ranking(brain: Brain) -> list[tuple[str, str, int, int]]:
+    """(login, shown name, right, answered) for everyone with 5 or more answered, best first."""
+    rows = []
+    for login, mem in brain.memory.store.data.items():
+        total = mem.get("trivia_total", 0)
+        if total >= 5:
+            shown = mem.get("name") or login.removeprefix("hub:")
+            rows.append((login, shown, mem.get("trivia_right", 0), total))
+    return sorted(rows, key=lambda r: (-r[2] / r[3], -r[3]))
+
+
 EIGHT_BALL = ["Definitely.", "Signs point to yes.", "Ask again after lunch.", "My sources say no.",
               "Absolutely not.", "It is certain. Well, pretty certain.", "Don't count on it.",
               "The future is hazy. Try defragging it.", "Yes, but you won't like it.", "No way, José.",
@@ -975,6 +1096,29 @@ def _games(b: Brain) -> None:
     @b.on(r"(?:play |let'?s play |start )?trivia(?: game)?|quiz me|ask me (?:a )?(?:question|trivia)")
     async def trivia(ctx: Ctx, m):
         return await _trivia_ask(ctx)
+
+    @b.on(r"(?:my |what'?s my |show my )?(?:trivia )?(?:score|record|stats)(?: in trivia)?|how am i doing(?: at trivia)?|trivia (?:score|record|stats)")
+    async def score(ctx: Ctx, m):
+        mem = ctx.mem
+        total, right = mem.get("trivia_total", 0), mem.get("trivia_right", 0)
+        if not total:
+            return "You haven't played trivia with me yet! Say \"trivia\" to start."
+        pct = round(100 * right / total)
+        verdict = ("Genius." if pct >= 80 else "Not bad at all." if pct >= 60 else "Room to grow!" if pct >= 40
+                   else "Hey, it's about having fun. Right?")
+        rank = _trivia_ranking(ctx.brain)
+        place = next((i for i, (who, *_) in enumerate(rank, 1) if who == ctx.login.lower()), None)
+        where = f" That's #{place} of {len(rank)} on the leaderboard." if place else ""
+        return f"You've gotten {right} of {total} trivia questions right ({pct}%). {verdict}{where}"
+
+    @b.on(r"(?:trivia )?(?:leaderboard|high ?scores|top(?: players)?|rankings?)(?: for trivia)?|trivia top|top trivia")
+    async def leaderboard(ctx: Ctx, m):
+        rank = _trivia_ranking(ctx.brain)
+        if not rank:
+            return "Nobody has answered 5 trivia questions yet. Be the first! Say \"trivia\"."
+        lines = [f"{i}. {name}: {right} of {total} ({round(100 * right / total)}%)"
+                 for i, (_, name, right, total) in enumerate(rank[:5], 1)]
+        return "Trivia leaderboard (5 or more answered):\n" + "\n".join(lines)
 
     @b.on(r"(?:play |let'?s play |start )?hangman")
     async def hangman(ctx: Ctx, m):

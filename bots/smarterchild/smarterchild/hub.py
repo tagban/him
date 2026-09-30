@@ -122,12 +122,13 @@ class Hub:
             log.info("chat %s %s: rate limited", self.host, who)
             return
         assert self.client
+        replies = await self.brain.answer(key, q, room=True)  # in the order they were said
         await asyncio.sleep(random.uniform(0.7, 1.6))
-        replies = await self.brain.answer(key, q, room=True)
         lines = "\n".join(replies).split("\n")
         if len(lines) > 5:
             lines = lines[:4] + ["(There's more: IM me for the rest.)"]
-        text = f"{who}: " + "\r".join(lines)
+        name = self.brain.memory.of(key).get("name") or who  # what they asked to be called
+        text = f"{name}: " + "\r".join(lines)
         self.client.send_chat(text[: self.client.max_message_bytes or 4000])
         log.info("chat %s %s: %r", self.host, who, q[:60])
 

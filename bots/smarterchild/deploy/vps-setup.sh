@@ -87,6 +87,9 @@ services:
     env_file: .env
     volumes:
       - ./data:/data
+    # A Hotline server on this same machine (HUB_HOST=host.docker.internal)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     logging:
       driver: json-file
       options:

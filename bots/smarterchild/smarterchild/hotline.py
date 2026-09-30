@@ -359,6 +359,7 @@ class Client:
         self.on_event = on_event
         self.classic, self.icon = classic, icon
         self.users: dict[int, str] = {}  # classic: user ID -> name
+        self.icons: dict[int, int] = {}  # classic: user ID -> icon
         self.user_id = 0
         self.utf8 = True
         self.max_message_bytes = 4096
@@ -579,11 +580,15 @@ class Client:
         elif t.ty == Tx.NOTIFY_CHANGE_USER:
             uid = t.uint(F.USER_ID)
             if uid is not None:
+                old = self.users.get(uid)
                 self.users[uid] = s(F.USER_NAME).strip()
-                await self._emit("user_changed", {"id": uid, "name": self.users[uid]})
+                self.icons[uid] = t.uint(F.USER_ICON_ID) or 0
+                await self._emit("user_changed", {"id": uid, "name": self.users[uid], "icon": self.icons[uid],
+                                                  "old_name": old})
         elif t.ty == Tx.NOTIFY_DELETE_USER:
             uid = t.uint(F.USER_ID)
             if uid is not None:
+                self.icons.pop(uid, None)
                 await self._emit("user_left", {"id": uid, "name": self.users.pop(uid, "")})
 
     def _buddy(self, group: list[tuple[int, bytes]]) -> Buddy:
@@ -676,11 +681,12 @@ class Client:
     async def get_users(self) -> dict[int, str]:
         """Everyone on the server: `id(2) icon(2) flags(2) name_len(2) name` per entry."""
         r = await self.request(Tx.GET_USER_NAME_LIST, [])
-        self.users = {}
+        self.users, self.icons = {}, {}
         for fid, d in r.fields:
             if fid == F.USER_NAME_WITH_INFO and len(d) >= 8:
-                uid, _, _, ln = struct.unpack_from(">HHHH", d)
+                uid, icon, _, ln = struct.unpack_from(">HHHH", d)
                 self.users[uid] = self.dec(d[8:8 + ln]).strip()
+                self.icons[uid] = icon
         return self.users
 
     async def close(self) -> None:

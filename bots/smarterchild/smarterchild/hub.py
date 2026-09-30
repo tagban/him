@@ -106,11 +106,10 @@ class Hub:
         who, text = m[1].strip(), m[2].strip()
         if who.lower() in (n.lower() for n in self.names):
             return  # ourselves
-        key = f"hub:{who}"
         r = RELAYED.match(text)
-        if r:  # answer the person on Discord, not the relay
+        if r:  # answer the person on Discord, not the relay; the same name there is the same person here
             who, text = r[2].strip(), r[3].strip()
-            key = f"{r[1].lower()}:{who}"
+        key = f"hub:{who}"
         q = command(text, self.trigger)
         if q is None:
             q = addressed(text, self.names)

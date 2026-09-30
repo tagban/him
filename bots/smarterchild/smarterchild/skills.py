@@ -22,14 +22,14 @@ from .brain import Brain, Ctx
 # ---------- the menu ----------
 
 MENU = [
-    ("Weather", 'weather in Boston, forecast, "I live in Chicago"'),
+    ("Weather", 'weather in Boston, weather in Paris (Celsius outside the US), forecast, "I live in Chicago", use celsius'),
     ("Look it up", 'who is Ada Lovelace, tell me about Hotline, "wiki MacOS 9"'),
     ("Dictionary", 'define serendipity, what does "ennui" mean'),
     ("Math and conversions", "what is 15% of 80, 12*(3+4), 10 km in miles, 72 f in c"),
     ("Time around the world", "what time is it in Tokyo, time in London"),
     ("Reminders", "remind me in 20 minutes to check the oven, remind me at 5pm to call Mom, my reminders"),
     ("Games", "trivia, hangman, guess a number, rock paper scissors, 8 ball will I win, roll 2d6, flip a coin"),
-    ("News", "news, headlines"),
+    ("News", "news, headlines, happy news"),
     ("Hotline chat rooms", "chat rooms, who's on Hotline"),
     ("On this day", "on this day, today in history"),
     ("Jokes and fortunes", "tell me a joke, fortune"),
@@ -117,7 +117,21 @@ async def find_place(q: str) -> dict | None:
     r = results[0]
     where = r.get("admin1") if r.get("country_code") == "US" else r.get("country")
     return {"name": r["name"], "lat": r["latitude"], "lon": r["longitude"], "tz": r.get("timezone", "UTC"),
-            "label": f"{r['name']}, {where}" if where else r["name"]}
+            "cc": r.get("country_code", ""), "label": f"{r['name']}, {where}" if where else r["name"]}
+
+
+# Where Fahrenheit is the everyday unit: the US and its territories, and a handful of others.
+FAHRENHEIT = {"US", "PR", "GU", "VI", "AS", "MP", "UM", "LR", "BS", "BZ", "KY", "PW", "FM", "MH"}
+
+
+def units_for(ctx: Ctx, place: dict) -> str:
+    """The person's own choice ("use celsius"), else what's used where the weather is."""
+    if ctx.mem.get("units") in ("c", "f"):
+        return ctx.mem["units"]
+    cc = place.get("cc")
+    if not cc:  # a place remembered before we kept the country: US labels end in a state
+        cc = "US" if place.get("label", "").rsplit(", ", 1)[-1] in STATES.values() else ""
+    return "f" if cc in FAHRENHEIT else "c"
 
 
 # ---------- about you ----------
@@ -152,7 +166,13 @@ def _memory(b: Brain) -> None:
     async def units(ctx: Ctx, m):
         c = m[1].lower() in ("celsius", "centigrade", "metric")
         ctx.remember("units", "c" if c else "f")
-        return f"OK, {'Celsius' if c else 'Fahrenheit'} it is."
+        return f"OK, {'Celsius' if c else 'Fahrenheit'} it is, wherever the weather is. (\"use local units\" goes back to each place's own.)"
+
+    @b.on(r"use (?:local|auto|automatic|default|the local) units")
+    async def local_units(ctx: Ctx, m):
+        ctx.mem.pop("units", None)
+        ctx.brain.memory.store.save()
+        return "OK: Fahrenheit for the US, Celsius everywhere else."
 
     @b.on(r"remember(?: that)? my ([\w ]{1,40}?) (?:is|are) (.{1,200})")
     async def remember_fact(ctx: Ctx, m):
@@ -307,7 +327,7 @@ def _weather(b: Brain) -> None:
         if not place:
             ctx.start(_ask_place)
             return "Where are you? Tell me a city (like \"Denver\" or \"Paris, France\") and I'll remember it."
-        return await forecast(place, ctx.mem.get("units", "f"))
+        return await forecast(place, units_for(ctx, place))
 
     async def _ask_place(ctx: Ctx):
         ctx.end()
@@ -315,7 +335,7 @@ def _weather(b: Brain) -> None:
         if not p:
             return f"I couldn't find \"{ctx.text}\". Ask me again with a city name."
         ctx.remember("place", p)
-        return await forecast(p, ctx.mem.get("units", "f"))
+        return await forecast(p, units_for(ctx, p))
 
 
 async def forecast(p: dict, units: str) -> str:
@@ -618,7 +638,70 @@ def _news(b: Brain) -> None:
                 break
         if not items:
             return "The newswire is quiet right now. Try again in a bit?"
-        return "In the news:\n" + "\n".join(f"• {i}" for i in items[:5])
+        return "In the news:\n" + "\n".join(f"• {i}" for i in items[:5]) + \
+            "\n(Want something lighter? Ask me for happy news.)"
+
+    @b.on(r"(?:some |the |any |today'?s )?(?:happy|good|positive|uplifting|cheerful|nice|feel[- ]good) ?news(?: today)?|"
+          r"(?:tell me |give me )?something (?:happy|positive|nice|good|uplifting)|cheer me up|happynews|goodnews")
+    async def happy_news(ctx: Ctx, m):
+        """Recent stories from good-news sites, a few from each, never the grim kind."""
+        stories = await good_news()
+        if not stories:
+            return "The good-news wires are quiet right now. Here's one anyway: you're talking to a robot who thinks you're great."
+        pick = random.sample(stories, min(4, len(stories)))
+        return "Some good news:\n" + "\n".join(f"• {t}: {link}" for t, link, src in pick)
+
+
+GOOD_NEWS_FEEDS = [
+    ("Good News Network", "https://www.goodnewsnetwork.org/feed/"),
+    ("Positive News", "https://www.positive.news/feed/"),
+    ("Reasons to be Cheerful", "https://reasonstobecheerful.world/feed/"),
+    ("The Optimist Daily", "https://www.optimistdaily.com/feed/"),
+]
+GRIM = re.compile(r"\b(?:dies|died|dead|death|deaths|killed|kills|murder|shooting|war|crash|cancer|funeral|grief|tragic|tragedy)\b", re.I)
+_good_cache: tuple[float, list] = (0, [])
+
+
+def parse_feed(xml: bytes, source: str, max_age_days: int = 14) -> list[tuple[str, str, str]]:
+    """(title, link, source) for an RSS feed's recent items, leaving out anything grim."""
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    out = []
+    for item in ET.fromstring(xml).iter("item"):
+        title = html.unescape((item.findtext("title") or "").strip())
+        link = (item.findtext("link") or "").strip()
+        if not title or not link or GRIM.search(title):
+            continue
+        try:
+            when = parsedate_to_datetime(item.findtext("pubDate") or "")
+            if (datetime.now(when.tzinfo) - when).days > max_age_days:
+                continue
+        except (TypeError, ValueError):
+            pass
+        out.append((title, link, source))
+    return out
+
+
+async def good_news() -> list[tuple[str, str, str]]:
+    global _good_cache
+    if _good_cache[0] > time.time():
+        return _good_cache[1]
+
+    async def one(name, url):
+        def get():
+            import urllib.request
+            req = urllib.request.Request(url, headers={"User-Agent": web.UA})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.read(3_000_000)
+        try:
+            return parse_feed(await asyncio.to_thread(get), name)[:10]
+        except Exception:
+            return []
+
+    stories = [s for feed in await asyncio.gather(*(one(n, u) for n, u in GOOD_NEWS_FEEDS)) for s in feed]
+    if stories:
+        _good_cache = (time.time() + 1800, stories)
+    return stories
 
 
 # ---------- Hotline chat rooms ----------

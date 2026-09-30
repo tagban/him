@@ -153,3 +153,30 @@ def test_hub_commands_and_triggers(tmp_path):
     assert said[1] == "Sam: 2+2 = 4"
     assert "!weather" in said[2]
     assert len(said) == 3
+
+
+def test_weather_units_follow_the_place(brain):
+    from smarterchild.brain import Ctx
+    from smarterchild.skills import units_for
+    ctx = Ctx(brain, "alice", "hi")
+    assert units_for(ctx, {"cc": "US"}) == "f"
+    assert units_for(ctx, {"cc": "FR"}) == "c"
+    assert units_for(ctx, {"cc": "PR"}) == "f"
+    assert units_for(ctx, {"label": "Portland, Oregon"}) == "f"   # remembered before we kept the country
+    assert units_for(ctx, {"label": "Paris, France"}) == "c"
+    ask(brain, "use celsius")
+    assert units_for(Ctx(brain, "alice", "hi"), {"cc": "US"}) == "c"
+    ask(brain, "use local units")
+    assert units_for(Ctx(brain, "alice", "hi"), {"cc": "US"}) == "f"
+
+
+def test_happy_news_leaves_out_the_grim():
+    from smarterchild.skills import parse_feed
+    rss = b"""<rss><channel>
+      <item><title>Town plants 10,000 trees</title><link>https://x/1</link></item>
+      <item><title>Beloved actor dies at 90</title><link>https://x/2</link></item>
+      <item><title>Old story</title><link>https://x/3</link><pubDate>Mon, 01 Jan 2001 00:00:00 GMT</pubDate></item>
+    </channel></rss>"""
+    assert parse_feed(rss, "GNN") == [("Town plants 10,000 trees", "https://x/1", "GNN")]
+    from smarterchild.hub import command
+    assert command("!happynews") == "happy news"

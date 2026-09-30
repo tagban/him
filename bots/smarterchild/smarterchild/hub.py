@@ -32,6 +32,7 @@ COMMANDS = {
     "wiki": "tell me about", "wp": "tell me about", "whois": "who is", "t": "time in", "time": "time in",
     "calc": "", "math": "", "c": "", "8ball": "8 ball", "8": "8 ball", "otd": "on this day",
     "history": "on this day", "rooms": "chat rooms", "servers": "chat rooms", "headlines": "news",
+    "happynews": "happy news", "goodnews": "happy news", "happy": "happy news", "good": "happy news",
     "sc": "", "smarterchild": "", "help": "help", "commands": "help", "about": "who are you",
 }
 NATURAL = re.compile(r"(?:what'?s |how'?s )?(?:the )?(?:weather|forecast)(?: like)? (?:in|for|at) .{2,60}", re.I)

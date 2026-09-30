@@ -168,6 +168,6 @@ def room_reply(ctx: Ctx) -> str | None:
         return f"I'm {ctx.brain.bot_name}, a robot that lives on the Hotline IM network. {ctx.brain.pitch}"
     if ctx.low in ("help", "menu", "what can you do", "commands"):
         return ("In here, try !weather Boston, !news, !define ennui, !wiki Hotline, !time Tokyo, !calc 12*7, "
-                "!joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
+                "!happynews, !joke, !fact, !rooms, !8ball, !roll 2d6 (or say my name first). For reminders and games, "
                 "IM me. " + ctx.brain.pitch)
     return None

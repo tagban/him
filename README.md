@@ -21,6 +21,22 @@ page (for servers HIM knows one for; see `SIGNUP_PAGES` in `src-tauri/src/settin
 
 No IM account? **Chat rooms only** on the Sign On window joins rooms as a guest.
 
+## Screenshots
+
+On VesperNet:
+
+<p>
+<img src="docs/screenshots/vespernet-buddylist.png" width="214" alt="Buddy List">
+<img src="docs/screenshots/vespernet-im-icon.png" width="400" alt="An IM window with a Buddy Icon">
+</p>
+<p>
+<img src="docs/screenshots/vespernet-chatroom.png" width="540" alt="MacDomain as a chat room">
+<img src="docs/screenshots/vespernet-buddylist-away.png" width="214" alt="Away, with an away message">
+</p>
+<p>
+<img src="docs/screenshots/vespernet-gallery.png" width="472" alt="Choosing a Buddy Icon from a zip of BadassBuddy icons">
+</p>
+
 macOS first; Windows and Linux later (it's Tauri, so they're mostly a build away).
 
 ## Download

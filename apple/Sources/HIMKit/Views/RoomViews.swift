@@ -249,7 +249,7 @@ private struct RoomPicture: View {
             if let img = room.image(for: media) {
                 IconImage(image: img)
                     .padding()
-                    .frame(minWidth: 360, minHeight: 300)
+                    .macMinSize(width: 360, height: 300)
                     .onTapGesture { zoomed = false }
             }
         }
@@ -354,7 +354,7 @@ public struct RoomBrowser: View {
             }
             .task { await rooms.refreshServers() }
         }
-        .frame(minWidth: 460, minHeight: 520)
+        .macMinSize(width: 460, height: 520)
         .onAppear { nick = rooms.nick }
     }
 

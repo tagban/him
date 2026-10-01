@@ -1,5 +1,7 @@
 # HIM, the Hotline Instant Messenger
 
+**Buddy icons courtesy of [BadassBuddy.com](https://www.badassbuddy.com) ♥**
+
 A buddy list in the spirit of late-90s AIM, for the Hotline network: gray
 Windows 98 windows, the Sign On screen, a Buddy List with Online and List Setup
 tabs, one little window per conversation, away messages, door sounds when
@@ -34,7 +36,7 @@ On VesperNet:
 <img src="docs/screenshots/vespernet-buddylist-away.png" width="214" alt="Away, with an away message">
 </p>
 <p>
-<img src="docs/screenshots/vespernet-gallery.png" width="472" alt="Choosing a Buddy Icon from a zip of BadassBuddy icons">
+<img src="docs/screenshots/vespernet-gallery.png" width="472" alt="Choosing a Buddy Icon from the BadassBuddy collection">
 </p>
 
 macOS first; Windows and Linux later (it's Tauri, so they're mostly a build away).
@@ -126,10 +128,12 @@ each event instead, so you can use the classic ones from an install you have.
 
 ### Buddy Icon
 
-**My HIM > Buddy Icon** takes a GIF (animated is fine), PNG or JPEG from a file, or
-from one pasted link (say, an icon you found on BadassBuddy). **Choose File** also
-opens a .zip: one picture is used as is, and a collection (BadassBuddy's download)
-opens as a searchable gallery, reachable again later under **My Icons...**. Pictures bigger than
+**My HIM > Buddy Icon** opens **BadassBuddy Icons...**: the BadassBuddy.com collection,
+which comes with HIM by permission (over 2,000 classic AIM icons, without the ones
+BadassBuddy marks NSFW), searchable by name. It also takes a GIF (animated is fine), PNG
+or JPEG from a file, or from one pasted link. **Choose File** also opens a .zip: one
+picture is used as is, and a collection opens as a searchable gallery, reachable again
+later under **My Icons...**. Pictures bigger than
 64 x 64 are scaled to 48 x 48 first. In an IM window your buddy's icon sits in the
 lower-left and yours in the lower-right, as in AIM; Buddy Info shows it too.
 
@@ -158,6 +162,10 @@ Buddy Icons (roster hashes, fetches, uploads) and never holds passwords or messa
 | `HIM_DEV_IM="login:text"` | Opens an IM window and sends one message. |
 
 ## Credits
+
+Buddy icons are © BadassBuddy.com, used by permission, not covered by the project's MIT license. https://www.badassbuddy.com
+
+The icons' terms are in [LICENSE-ICONS.txt](LICENSE-ICONS.txt).
 
 The protocol is fogWraith's; see the [Hotline documentation](https://github.com/fogWraith/Hotline).
 The tracker code follows BigRedH's crawler.

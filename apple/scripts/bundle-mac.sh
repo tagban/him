@@ -16,6 +16,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/HIM"
 [ -f Resources/AppIcon.icns ] && cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+# BadassBuddy's icons, used by permission (LICENSE-ICONS.txt).
+cp -R ../icons/badassbuddy "$APP/Contents/Resources/badassbuddy"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' ../him-ffi/Cargo.toml | head -1)"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -12,7 +12,12 @@ targets:
   HIM:
     type: application
     platform: iOS
-    sources: [iOS]
+    sources:
+      - iOS
+      # BadassBuddy's icons, used by permission (LICENSE-ICONS.txt), as a folder in the app.
+      - path: ../icons/badassbuddy
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: HIMKit
         product: HIMKit

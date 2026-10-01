@@ -85,7 +85,7 @@ struct AwayEditor: View {
                 }
             }
         }
-        .frame(minWidth: 360, minHeight: 240)
+        .macMinSize(width: 360, height: 240)
     }
 }
 
@@ -98,6 +98,7 @@ struct ProfileView: View {
     @State private var saving = false
     @State private var picking = false
     @State private var photo: PhotosPickerItem?
+    @State private var browsing = false
 
     var body: some View {
         NavigationStack {
@@ -106,11 +107,14 @@ struct ProfileView: View {
                     VStack(spacing: 10) {
                         Avatar(name: app.shownName, hash: app.myIconHash, size: 96)
                         if app.canSetIcon {
+                            Button("BadassBuddy Icons…") { browsing = true }
+                                .buttonStyle(.borderedProminent)
                             #if os(macOS)
-                            Button("Choose Buddy Icon…") { picking = true }
+                            Button("Choose a Picture…") { picking = true }
                             #else
-                            PhotosPicker("Choose Buddy Icon", selection: $photo, matching: .images)
+                            PhotosPicker("Choose a Photo", selection: $photo, matching: .images)
                             #endif
+                            BadassBuddyCredit()
                         } else {
                             Text("This server doesn't have Buddy Icons.").font(.caption).foregroundStyle(.secondary)
                         }
@@ -142,12 +146,13 @@ struct ProfileView: View {
                 defer { if ok { url.stopAccessingSecurityScopedResource() } }
                 if let d = try? Data(contentsOf: url) { setIcon(d) }
             }
+            .sheet(isPresented: $browsing) { IconGalleryView() }
             .onChange(of: photo) {
                 guard let photo else { return }
                 Task { if let d = try? await photo.loadTransferable(type: Data.self) { setIcon(d) } }
             }
         }
-        .frame(minWidth: 380, minHeight: 420)
+        .macMinSize(width: 380, height: 420)
         .onAppear { name = app.myName ?? "" }
     }
 
@@ -228,7 +233,7 @@ struct AddBuddyView: View {
                 results = await app.search(login)
             }
         }
-        .frame(minWidth: 380, minHeight: 320)
+        .macMinSize(width: 380, height: 320)
     }
 }
 
@@ -318,7 +323,7 @@ struct BuddyInfoView: View {
                 }
             }
         }
-        .frame(minWidth: 380, minHeight: 440)
+        .macMinSize(width: 380, height: 440)
         .task {
             alias = b?.nickname ?? ""
             info = await app.info(login)

@@ -16,6 +16,7 @@ async fn main() {
         security: Security::Auto,
         classic: true,
         media: true,
+        history: true,
     })
     .await
     .expect("connect");
@@ -23,5 +24,6 @@ async fn main() {
     println!("{host}: {:?} caps {:#06x}", c.info.server_name, c.info.caps);
     println!("  inline media: {:?}", c.info.media);
     println!("  gif icons: {:?}", c.gif_icons().await.map(|l| l.len()));
+    println!("  chat history: {} {:?}", c.info.chat_history, c.chat_history(None, None, 3).await.map(|p| (p.entries.len(), p.has_more)));
     c.disconnect();
 }

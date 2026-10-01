@@ -314,6 +314,11 @@ void uniffi_himffi_fn_method_session_agree_nowait(uint64_t ptr, RustBuffer nickn
 uint64_t uniffi_himffi_fn_method_session_block(uint64_t ptr, RustBuffer login
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HIMFFI_FN_METHOD_SESSION_CHAT_HISTORY
+#define UNIFFI_FFIDEF_UNIFFI_HIMFFI_FN_METHOD_SESSION_CHAT_HISTORY
+uint64_t uniffi_himffi_fn_method_session_chat_history(uint64_t ptr, RustBuffer before, RustBuffer after, uint16_t limit
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_HIMFFI_FN_METHOD_SESSION_DISCONNECT
 #define UNIFFI_FFIDEF_UNIFFI_HIMFFI_FN_METHOD_SESSION_DISCONNECT
 void uniffi_himffi_fn_method_session_disconnect(uint64_t ptr, RustCallStatus *_Nonnull out_status
@@ -832,6 +837,12 @@ uint16_t uniffi_himffi_checksum_method_session_agree_nowait(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_HIMFFI_CHECKSUM_METHOD_SESSION_BLOCK
 #define UNIFFI_FFIDEF_UNIFFI_HIMFFI_CHECKSUM_METHOD_SESSION_BLOCK
 uint16_t uniffi_himffi_checksum_method_session_block(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_HIMFFI_CHECKSUM_METHOD_SESSION_CHAT_HISTORY
+#define UNIFFI_FFIDEF_UNIFFI_HIMFFI_CHECKSUM_METHOD_SESSION_CHAT_HISTORY
+uint16_t uniffi_himffi_checksum_method_session_chat_history(void
     
 );
 #endif

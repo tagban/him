@@ -60,6 +60,9 @@ pub struct ConnectOptions {
     /// Ask a classic session's server for pictures in chat (inline media).
     #[serde(default)]
     pub media: bool,
+    /// Ask a classic session's server for its record of public chat (chat history).
+    #[serde(default)]
+    pub history: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -90,6 +93,8 @@ pub struct LoginInfo {
     pub warnings: Vec<String>,
     /// Pictures in chat, when the server confirmed inline media.
     pub media: Option<MediaLimits>,
+    /// The server keeps public chat and will hand it over (chat history).
+    pub chat_history: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -455,7 +460,8 @@ impl Io {
 fn login_fields(opts: &ConnectOptions, text: TextMode) -> Vec<Field> {
     let (version, caps) = if opts.classic {
         let media = if opts.media { cap::INLINE_MEDIA } else { 0 };
-        (CLASSIC_VERSION, cap::TEXT_ENCODING | media)
+        let history = if opts.history { cap::CHAT_HISTORY } else { 0 };
+        (CLASSIC_VERSION, cap::TEXT_ENCODING | media | history)
     } else {
         (CLIENT_VERSION, OUR_CAPS)
     };
@@ -686,6 +692,7 @@ fn finish(
         encrypted,
         warnings,
         media: (caps & cap::INLINE_MEDIA != 0).then(|| MediaLimits::parse(&reply)),
+        chat_history: caps & cap::CHAT_HISTORY != 0,
     };
     Ok(start(io, text, info))
 }

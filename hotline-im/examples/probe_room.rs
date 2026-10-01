@@ -24,6 +24,7 @@ async fn main() {
         },
         classic: true,
         media: false,
+        history: false,
     };
     if let Some(d) = hotline_im::info::probe(&opts.host, opts.port - 1).await {
         println!(

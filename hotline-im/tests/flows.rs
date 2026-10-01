@@ -26,6 +26,7 @@ fn opts(s: &MockServer, login: &str, security: Security) -> ConnectOptions {
         security,
         classic: false,
         media: false,
+        history: false,
     }
 }
 
@@ -275,6 +276,7 @@ fn guest(s: &MockServer, nick: &str) -> ConnectOptions {
         security: Security::Auto,
         classic: true,
         media: false,
+        history: false,
     }
 }
 
@@ -515,7 +517,7 @@ async fn no_buddy_icons_without_the_limit() {
 #[tokio::test]
 async fn pictures_and_gif_icons_in_a_room() {
     let s = server(MockConfig::default()).await;
-    let with_media = |nick: &str| ConnectOptions { media: true, ..guest(&s, nick) };
+    let with_media = |nick: &str| ConnectOptions { media: true, history: true, ..guest(&s, nick) };
     let mut a = hotline_im::connect(&with_media("PicA")).await.unwrap();
     let b = hotline_im::connect(&with_media("PicB")).await.unwrap();
     let mut old = hotline_im::connect(&guest(&s, "OldC")).await.unwrap();
@@ -559,4 +561,21 @@ async fn pictures_and_gif_icons_in_a_room() {
     assert_eq!(a.client.gif_icon(user_id).await.unwrap(), Some(gif.clone()));
     assert!(a.client.gif_icons().await.unwrap().contains(&(user_id, gif)));
     assert_eq!(a.client.gif_icon(old.client.info.user_id).await.unwrap(), None);
+
+    // Chat history: the latest lines, then older ones page by page.
+    for i in 1..=5 {
+        b.client.send_chat(&format!("line {i}"), false);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let latest = a.client.chat_history(None, None, 2).await.unwrap();
+    let texts: Vec<_> = latest.entries.iter().map(|e| e.text.as_str()).collect();
+    assert_eq!(texts, ["line 4", "line 5"]);
+    assert!(latest.has_more);
+    let older = a.client.chat_history(Some(latest.entries[0].id), None, 50).await.unwrap();
+    assert_eq!(older.entries.first().map(|e| e.text.as_str()), Some("[image]"));
+    assert_eq!(older.entries.last().map(|e| e.text.as_str()), Some("line 3"));
+    assert!(!older.has_more);
+    assert_eq!(older.entries[0].nick, "PicB");
+    // Without asking for it, there's none.
+    assert!(old.client.chat_history(None, None, 5).await.is_err());
 }

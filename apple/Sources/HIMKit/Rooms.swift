@@ -10,10 +10,12 @@ public struct RoomLine: Identifiable, Equatable {
     /// Who said it (chat lines).
     public let name: String
     public let text: String
-    public let date = Date()
+    public var date = Date()
     public let mine: Bool
     /// A picture sent with the line.
     public var media: MediaRef? = nil
+    /// From the server's chat history (said before we joined).
+    public var earlier = false
 }
 
 /// A Hotline server's public chat, joined as a guest.
@@ -37,6 +39,10 @@ public final class Room: Identifiable {
     /// What the server takes for pictures; nil when it doesn't.
     public private(set) var mediaLimits: MediaLimits?
     public private(set) var sending = false
+    /// The server has older chat to scroll back to.
+    public private(set) var hasEarlier = false
+    public private(set) var loadingEarlier = false
+    @ObservationIgnored private var oldestHistoryID: UInt64?
     let media = MediaStore()
 
     @ObservationIgnored var session: Session?
@@ -73,7 +79,7 @@ public final class Room: Identifiable {
         let mine = epoch
         state = .joining
         let so = SignOn(host: host, port: port, login: "", password: "", nickname: nick, icon: icon,
-                        security: .auto, classic: true, media: true)
+                        security: .auto, classic: true, media: true, history: true)
         do {
             let pipe = EventPipe()
             let s = try await connect(signOn: so, listener: pipe)
@@ -90,6 +96,7 @@ public final class Room: Identifiable {
                 }
             }
             await loadUsers()
+            await loadEarlier()
             await shareDeviceIcon()
         } catch {
             state = .left(describe(error))
@@ -129,6 +136,25 @@ public final class Room: Identifiable {
         } catch {
             return describe(error)
         }
+    }
+
+    /// The server's chat history: the latest lines first, then older ones each time.
+    public func loadEarlier() async {
+        guard let s = session, s.info().chatHistory, !loadingEarlier else { return }
+        loadingEarlier = true
+        defer { loadingEarlier = false }
+        guard let page = try? await s.chatHistory(before: oldestHistoryID, after: nil, limit: 50) else { return }
+        let earlier = page.entries.map { e -> RoomLine in
+            let kind: RoomLine.Kind = e.server ? .system : (e.emote ? .emote : .chat)
+            let text = e.deleted ? "[message removed]" : (e.emote ? "\(e.nick) \(e.text)" : e.text)
+            var l = RoomLine(kind: kind, name: e.nick, text: facesToEmoji(text: text), mine: e.nick == nick)
+            l.date = Date(timeIntervalSince1970: TimeInterval(e.timestamp))
+            l.earlier = true
+            return l
+        }
+        lines.insert(contentsOf: earlier, at: 0)
+        oldestHistoryID = page.entries.first?.id ?? oldestHistoryID
+        hasEarlier = page.hasMore
     }
 
     /// Shows which device we're on, where the server has GIF icons; and fetches everyone's.

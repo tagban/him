@@ -5,9 +5,9 @@ import Observation
 import UniformTypeIdentifiers
 
 /// One line of an IM conversation.
-public struct Line: Identifiable, Equatable {
-    public enum Direction: Equatable { case incoming, outgoing, system }
-    public enum Status: Equatable {
+public struct Line: Identifiable, Equatable, Codable {
+    public enum Direction: Equatable, Codable { case incoming, outgoing, system }
+    public enum Status: Equatable, Codable {
         case sending, sent, queued, delivered, read
         case failed(String)
         /// Incoming, not yet seen.
@@ -91,6 +91,7 @@ public final class AppModel {
     @ObservationIgnored private var epoch = 0
     @ObservationIgnored private var autoAnswered: Set<String> = []
     @ObservationIgnored private var typingSent: [String: Date] = [:]
+    @ObservationIgnored private var history: IMHistory?
 
     public init() {
         rooms.app = self
@@ -120,7 +121,7 @@ public final class AppModel {
         let acct = SavedAccount(login: login, host: host, port: port, savePassword: savePassword, autoSignOn: autoSignOn)
         let pw = password.isEmpty ? (Keychain.get(acct.key) ?? "") : password
         let so = SignOn(host: host, port: port, login: login, password: pw, nickname: login, icon: 0,
-                        security: .auto, classic: false, media: false)
+                        security: .auto, classic: false, media: false, history: false)
         signOnError = nil
         phase = .signingOn("Connecting…")
         do {
@@ -135,6 +136,7 @@ public final class AppModel {
             Settings.account = acct
             account = acct
             signOn = so
+            loadHistory(acct)
             begin(s, pipe)
             await ready()
             phase = .online
@@ -149,6 +151,7 @@ public final class AppModel {
         session?.disconnect()
         session = nil
         signOn = nil
+        history = nil
         if var a = account, a.autoSignOn {
             a.autoSignOn = false  // signing off by hand means "not automatically next time"
             Settings.account = a
@@ -170,6 +173,28 @@ public final class AppModel {
     public func roomsOnly() {
         signOnError = nil
         phase = .guest
+    }
+
+    private func loadHistory(_ acct: SavedAccount) {
+        let h = IMHistory(account: acct)
+        history = h
+        conversations = [:]
+        for (login, lines) in h.loadAll() {
+            let c = Conversation(login: login)
+            c.lines = lines
+            conversations[login] = c
+        }
+    }
+
+    /// Keeps a conversation on this device.
+    private func saved(_ c: Conversation) {
+        history?.save(c)
+    }
+
+    /// Clears a conversation here and on this device.
+    public func clearHistory(_ login: String) {
+        conversations[login]?.lines = []
+        history?.forget(login)
     }
 
     private func begin(_ s: Session, _ pipe: EventPipe) {
@@ -273,6 +298,7 @@ public final class AppModel {
         case .ack(let guid, let login, let kind):
             guard let c = conversations[login], let i = c.lines.firstIndex(where: { $0.id == guid }) else { return }
             if c.lines[i].status != .read { c.lines[i].status = kind == .read ? .read : .delivered }
+            saved(c)
         case .typing(let login, let typing):
             conversation(login).typing = typing
         case .agreement:
@@ -317,6 +343,7 @@ public final class AppModel {
         let viewing = target == .im(m.from) && Notifier.shared.appIsActive
         c.lines.append(Line(id: m.guid, direction: .incoming, body: m.body, date: date, status: viewing ? .seen : .unread))
         c.typing = false
+        saved(c)
         if viewing {
             session?.ack(guid: m.guid, from: m.from, kind: .read)
         } else {
@@ -337,6 +364,7 @@ public final class AppModel {
         // Emoji need UTF-8; on an older server they go as the faces classic clients show.
         let wire = serverInfo?.utf8 == true ? text : emojiToFaces(text: text)
         c.lines.append(Line(id: guid, direction: .outgoing, body: text, date: .now, status: .sending))
+        saved(c)
         s.typing(to: login, typing: false)
         typingSent[login] = nil
         Task {
@@ -350,6 +378,7 @@ public final class AppModel {
             if let i = c.lines.firstIndex(where: { $0.id == guid }), c.lines[i].status == .sending {
                 c.lines[i].status = result
             }
+            self.saved(c)
         }
     }
 
@@ -369,10 +398,13 @@ public final class AppModel {
     /// Read receipts for everything showing.
     public func markRead(_ login: String) {
         guard let c = conversations[login] else { return }
+        var any = false
         for i in c.lines.indices where c.lines[i].status == .unread {
             c.lines[i].status = .seen
             session?.ack(guid: c.lines[i].id, from: login, kind: .read)
+            any = true
         }
+        if any { saved(c) }
         Notifier.shared.clear(id: "im-\(login)")
     }
 

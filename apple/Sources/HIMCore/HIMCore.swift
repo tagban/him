@@ -535,6 +535,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -842,6 +858,11 @@ public protocol SessionProtocol: AnyObject, Sendable {
     
     func block(login: String) async throws 
     
+    /**
+     * The latest `limit` public chat lines, or those before / after a line's ID.
+     */
+    func chatHistory(before: UInt64?, after: UInt64?, limit: UInt16) async throws  -> HistoryPage
+    
     func disconnect() 
     
     func downloadMedia(id: String) async throws  -> MediaData
@@ -1050,6 +1071,25 @@ open func block(login: String)async throws   {
             completeFunc: ffi_himffi_rust_future_complete_void,
             freeFunc: ffi_himffi_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeHimError_lift
+        )
+}
+    
+    /**
+     * The latest `limit` public chat lines, or those before / after a line's ID.
+     */
+open func chatHistory(before: UInt64?, after: UInt64?, limit: UInt16)async throws  -> HistoryPage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_chat_history(
+                        self.uniffiCloneHandle(),FfiConverterOptionUInt64.lower(before),FfiConverterOptionUInt64.lower(after),FfiConverterUInt16.lower(limit)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_himffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_himffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeHistoryPage_lift,
             errorHandler: FfiConverterTypeHimError_lift
         )
 }
@@ -1848,6 +1888,147 @@ public func FfiConverterTypeGifIcon_lower(_ value: GifIcon) -> RustBuffer {
 }
 
 
+/**
+ * A remembered public chat line (chat history).
+ */
+public struct HistoryEntry: Equatable, Hashable {
+    public var id: UInt64
+    public var timestamp: Int64
+    public var nick: String
+    public var text: String
+    public var icon: UInt16
+    public var emote: Bool
+    public var server: Bool
+    public var deleted: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: UInt64, timestamp: Int64, nick: String, text: String, icon: UInt16, emote: Bool, server: Bool, deleted: Bool) {
+        self.id = id
+        self.timestamp = timestamp
+        self.nick = nick
+        self.text = text
+        self.icon = icon
+        self.emote = emote
+        self.server = server
+        self.deleted = deleted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HistoryEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHistoryEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HistoryEntry {
+        return
+            try HistoryEntry(
+                id: FfiConverterUInt64.read(from: &buf), 
+                timestamp: FfiConverterInt64.read(from: &buf), 
+                nick: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                icon: FfiConverterUInt16.read(from: &buf), 
+                emote: FfiConverterBool.read(from: &buf), 
+                server: FfiConverterBool.read(from: &buf), 
+                deleted: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HistoryEntry, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.timestamp, into: &buf)
+        FfiConverterString.write(value.nick, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterUInt16.write(value.icon, into: &buf)
+        FfiConverterBool.write(value.emote, into: &buf)
+        FfiConverterBool.write(value.server, into: &buf)
+        FfiConverterBool.write(value.deleted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryEntry_lift(_ buf: RustBuffer) throws -> HistoryEntry {
+    return try FfiConverterTypeHistoryEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryEntry_lower(_ value: HistoryEntry) -> RustBuffer {
+    return FfiConverterTypeHistoryEntry.lower(value)
+}
+
+
+public struct HistoryPage: Equatable, Hashable {
+    /**
+     * Oldest first.
+     */
+    public var entries: [HistoryEntry]
+    public var hasMore: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Oldest first.
+         */entries: [HistoryEntry], hasMore: Bool) {
+        self.entries = entries
+        self.hasMore = hasMore
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HistoryPage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHistoryPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HistoryPage {
+        return
+            try HistoryPage(
+                entries: FfiConverterSequenceTypeHistoryEntry.read(from: &buf), 
+                hasMore: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HistoryPage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeHistoryEntry.write(value.entries, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryPage_lift(_ buf: RustBuffer) throws -> HistoryPage {
+    return try FfiConverterTypeHistoryPage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHistoryPage_lower(_ value: HistoryPage) -> RustBuffer {
+    return FfiConverterTypeHistoryPage.lower(value)
+}
+
+
 public struct IconInfo: Equatable, Hashable {
     /**
      * "gif", "png" or "jpg"
@@ -2434,6 +2615,10 @@ public struct ServerInfo: Equatable, Hashable {
      * Our user ID (chat rooms).
      */
     public var userId: UInt16
+    /**
+     * The server keeps public chat's history.
+     */
+    public var chatHistory: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2455,7 +2640,10 @@ public struct ServerInfo: Equatable, Hashable {
          */media: MediaLimits?, 
         /**
          * Our user ID (chat rooms).
-         */userId: UInt16) {
+         */userId: UInt16, 
+        /**
+         * The server keeps public chat's history.
+         */chatHistory: Bool) {
         self.serverName = serverName
         self.messaging = messaging
         self.transport = transport
@@ -2467,6 +2655,7 @@ public struct ServerInfo: Equatable, Hashable {
         self.utf8 = utf8
         self.media = media
         self.userId = userId
+        self.chatHistory = chatHistory
     }
 
     
@@ -2495,7 +2684,8 @@ public struct FfiConverterTypeServerInfo: FfiConverterRustBuffer {
                 maxIconDimension: FfiConverterUInt32.read(from: &buf), 
                 utf8: FfiConverterBool.read(from: &buf), 
                 media: FfiConverterOptionTypeMediaLimits.read(from: &buf), 
-                userId: FfiConverterUInt16.read(from: &buf)
+                userId: FfiConverterUInt16.read(from: &buf), 
+                chatHistory: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -2511,6 +2701,7 @@ public struct FfiConverterTypeServerInfo: FfiConverterRustBuffer {
         FfiConverterBool.write(value.utf8, into: &buf)
         FfiConverterOptionTypeMediaLimits.write(value.media, into: &buf)
         FfiConverterUInt16.write(value.userId, into: &buf)
+        FfiConverterBool.write(value.chatHistory, into: &buf)
     }
 }
 
@@ -2552,6 +2743,10 @@ public struct SignOn: Equatable, Hashable {
      * Ask a chat room's server for pictures in chat.
      */
     public var media: Bool
+    /**
+     * Ask a chat room's server for its chat history.
+     */
+    public var history: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2567,7 +2762,10 @@ public struct SignOn: Equatable, Hashable {
          */classic: Bool, 
         /**
          * Ask a chat room's server for pictures in chat.
-         */media: Bool) {
+         */media: Bool, 
+        /**
+         * Ask a chat room's server for its chat history.
+         */history: Bool) {
         self.host = host
         self.port = port
         self.login = login
@@ -2577,6 +2775,7 @@ public struct SignOn: Equatable, Hashable {
         self.security = security
         self.classic = classic
         self.media = media
+        self.history = history
     }
 
     
@@ -2603,7 +2802,8 @@ public struct FfiConverterTypeSignOn: FfiConverterRustBuffer {
                 icon: FfiConverterUInt16.read(from: &buf), 
                 security: FfiConverterTypeSecurity.read(from: &buf), 
                 classic: FfiConverterBool.read(from: &buf), 
-                media: FfiConverterBool.read(from: &buf)
+                media: FfiConverterBool.read(from: &buf), 
+                history: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -2617,6 +2817,7 @@ public struct FfiConverterTypeSignOn: FfiConverterRustBuffer {
         FfiConverterTypeSecurity.write(value.security, into: &buf)
         FfiConverterBool.write(value.classic, into: &buf)
         FfiConverterBool.write(value.media, into: &buf)
+        FfiConverterBool.write(value.history, into: &buf)
     }
 }
 
@@ -3433,6 +3634,30 @@ fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
     typealias SwiftType = Bool?
 
@@ -3750,6 +3975,31 @@ fileprivate struct FfiConverterSequenceTypeGifIcon: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeHistoryEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [HistoryEntry]
+
+    public static func write(_ value: [HistoryEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHistoryEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HistoryEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HistoryEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHistoryEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeListedServer: FfiConverterRustBuffer {
     typealias SwiftType = [ListedServer]
 
@@ -3974,6 +4224,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_block() != 6132) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_himffi_checksum_method_session_chat_history() != 16575) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_disconnect() != 47302) {

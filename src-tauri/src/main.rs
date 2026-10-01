@@ -1,6 +1,7 @@
 // HIM, the Hotline Instant Messenger: the late-90s AIM experience on the Hotline IM network.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod history;
 mod icons;
 mod rooms;
 mod session;

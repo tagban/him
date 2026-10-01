@@ -285,6 +285,11 @@ struct BuddyInfoView: View {
                             Task { await app.remove(login); dismiss() }
                         }
                     }
+                    Section {
+                        Button("Clear Conversation History", role: .destructive) { app.clearHistory(login) }
+                    } footer: {
+                        Text("Conversations are kept on this device only.")
+                    }
                 } else {
                     Section {
                         Button("Add to Buddy List") { Task { _ = await app.addBuddy(login, note: "") } }

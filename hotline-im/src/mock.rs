@@ -104,6 +104,8 @@ struct State {
     uploads: HashMap<Vec<u8>, Vec<u8>>,
     /// GIF icons, by session.
     gif_icons: HashMap<u64, Vec<u8>>,
+    /// Public chat, for chat history.
+    history: Vec<crate::history::HistoryEntry>,
 }
 
 #[derive(Clone)]
@@ -450,7 +452,7 @@ impl MockServer {
         let asked = req.uint(field::CAPABILITIES).unwrap_or(0) as u16;
         let mut ours = cap::MESSAGING | cap::MESSENGER_SESSION | cap::TEXT_ENCODING;
         if self.cfg.media {
-            ours |= cap::INLINE_MEDIA;
+            ours |= cap::INLINE_MEDIA | cap::CHAT_HISTORY;
         }
         let confirmed = asked & ours;
         let mut lf = vec![
@@ -736,6 +738,17 @@ impl MockServer {
                     format!("\r{:>13}:  {}", me_s.name, text)
                 };
                 let plain = notify(tx::CHAT_MSG, vec![Field::new(field::DATA, line)]);
+                let id = st.history.len() as u64 + 1;
+                st.history.push(crate::history::HistoryEntry {
+                    id,
+                    timestamp: now() as i64,
+                    nick: me_s.name.clone(),
+                    text: text.clone(),
+                    icon: me_s.icon,
+                    emote: t.uint(field::CHAT_OPTIONS) == Some(1),
+                    server: false,
+                    deleted: false,
+                });
                 // A picture goes only to sessions that can show one (the rest get the text).
                 let pic = t
                     .bytes(field::MEDIA_ID)
@@ -771,6 +784,29 @@ impl MockServer {
                     }
                     None => Some(fail(t, 0, "That user isn't here.")),
                 }
+            }
+            tx::GET_CHAT_HISTORY => {
+                let caps = st.sessions.get(&sid).map(|s| s.caps).unwrap_or(0);
+                if caps & cap::CHAT_HISTORY == 0 {
+                    return Some(fail(t, 0, "Chat history isn't on for you."));
+                }
+                let before = t.uint(field::HISTORY_BEFORE).unwrap_or(u64::MAX);
+                let after = t.uint(field::HISTORY_AFTER).unwrap_or(0);
+                let limit = t.uint(field::HISTORY_LIMIT).unwrap_or(50).clamp(1, 200) as usize;
+                let range: Vec<_> = st.history.iter().filter(|e| e.id < before && e.id > after).collect();
+                // Newest first unless catching up from `after`; replies are oldest-first either way.
+                let from_after = t.has(field::HISTORY_AFTER) && !t.has(field::HISTORY_BEFORE);
+                let page: Vec<_> = if from_after {
+                    range.iter().take(limit).collect()
+                } else {
+                    range.iter().skip(range.len().saturating_sub(limit)).collect()
+                };
+                let mut f: Vec<Field> = page
+                    .iter()
+                    .map(|e| Field::new(field::HISTORY_ENTRY, e.pack(crate::text::TextMode::Utf8)))
+                    .collect();
+                f.push(Field::new(field::HISTORY_HAS_MORE, [(range.len() > page.len()) as u8]));
+                ok(f)
             }
             tx::UPLOAD_MEDIA => {
                 if st.sessions.get(&sid).map(|s| s.caps & cap::INLINE_MEDIA) != Some(cap::INLINE_MEDIA) {

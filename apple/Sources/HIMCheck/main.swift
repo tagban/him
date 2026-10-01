@@ -45,6 +45,15 @@ struct Check {
     @MainActor
     static func main() async {
         let port = UInt16(CommandLine.arguments.dropFirst().first ?? "15500") ?? 15500
+        // Start clean, and leave nothing behind: the room name and the test account's history.
+        let testHistory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("HIM Modern/history/alice@127.0.0.1:\(port)")
+        func cleanUp() {
+            UserDefaults.standard.removeObject(forKey: "roomNick")
+            try? FileManager.default.removeItem(at: testHistory)
+        }
+        cleanUp()
+        atexit_b { cleanUp() }
 
         // ---- shrinking ----
         let limits = MediaLimits(maxBytes: 256 * 1024, maxDimension: 2048, maxPixels: 2048 * 2048, maxFrames: 150)
@@ -75,6 +84,7 @@ struct Check {
         check(await until { [.sent, .delivered, .read].contains(c.lines.first!.status) }, "our line is sent (\(c.lines.first!.status))")
 
         // ---- chat rooms ----
+        app.rooms.nick = "Alice"
         let room = app.rooms.join(host: "127.0.0.1", port: port, title: "Test")
         check(await until { room.state == .joined }, "alice joins the room")
         check(room.mediaLimits != nil, "the room takes pictures")
@@ -91,10 +101,24 @@ struct Check {
         check(await until { room2.lines.contains { $0.media != nil } }, "the visitor gets the picture's line")
         let line = room2.lines.last { $0.media != nil }!
         print("     line: \(line.name): \(line.text) [\(line.media!.mime), \(line.media!.bytes) bytes]")
+        check(line.name == "Alice", "from Alice")
         check(await until { room2.image(for: line.media!) != nil }, "and the picture itself")
         let img = room2.image(for: line.media!)!
         check(img.frames[0].width == 900, "at full size (\(img.frames[0].width)×\(img.frames[0].height))")
+        // ---- chat history ----
+        let late = AppModel()
+        late.roomsOnly()
+        late.rooms.nick = "Latecomer"
+        let room3 = late.rooms.join(host: "127.0.0.1", port: port, title: "Test")
+        check(await until { room3.lines.contains { $0.earlier && $0.text == "hi room 😀" } },
+              "someone joining later sees what was said before (\(room3.lines.filter(\.earlier).count) earlier lines)")
+        try? await Task.sleep(nanoseconds: 800_000_000)  // let the IM history be written
+        let said = app.conversation("hotbot").lines.count
         app.signOff()
+        let again = AppModel()
+        await again.signOn(login: "alice", password: "hotline", host: "127.0.0.1", port: port, savePassword: false, autoSignOn: false)
+        check(again.conversations["hotbot"]?.lines.count == said, "alice's conversation with HotBot is still there after signing on again (\(said) lines)")
+        again.signOff()
         print("all good")
         exit(0)
     }

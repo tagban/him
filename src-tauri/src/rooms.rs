@@ -264,6 +264,7 @@ async fn connect_room(app: AppHandle, id: String) {
                 security: Security::Auto,
                 classic: true,
                 media: false,
+                history: true,
             },
             room.epoch,
         )
@@ -323,6 +324,40 @@ async fn connect_room(app: AppHandle, id: String) {
     }
     tauri::async_runtime::spawn(pump(app.clone(), id.clone(), epoch, session.events));
     load_users(&app, &id, epoch, &client).await;
+    load_history(&app, &id, epoch, &client).await;
+}
+
+/// What was said before we came in, from servers that keep chat history.
+async fn load_history(app: &AppHandle, id: &str, epoch: u64, client: &Client) {
+    if !client.info.chat_history {
+        return;
+    }
+    let Ok(page) = client.chat_history(None, None, 50).await else { return };
+    update(app, id, epoch, |room| {
+        let earlier: Vec<RoomLine> = page
+            .entries
+            .iter()
+            .map(|e| {
+                let (kind, name, text) = if e.deleted {
+                    ("system", String::new(), "[message removed]".to_string())
+                } else if e.server {
+                    ("system", String::new(), e.text.clone())
+                } else if e.emote {
+                    ("emote", String::new(), format!("{} {}", e.nick, e.text))
+                } else {
+                    ("chat", e.nick.clone(), e.text.clone())
+                };
+                RoomLine {
+                    kind: kind.into(),
+                    mine: name == room.nick,
+                    name,
+                    text,
+                    ts: e.timestamp.max(0) as u64,
+                }
+            })
+            .collect();
+        room.lines.splice(0..0, earlier);
+    });
 }
 
 async fn load_users(app: &AppHandle, id: &str, epoch: u64, client: &Client) {

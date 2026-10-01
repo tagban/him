@@ -42,6 +42,9 @@ pub mod tx {
     pub const SET_BUDDY_ICON: u16 = 827;
     pub const GET_BUDDY_ICON: u16 = 828;
 
+    /// Chat history (Capabilities-Chat-History.md): the server's record of public chat.
+    pub const GET_CHAT_HISTORY: u16 = 700;
+
     /// Inline media (Capabilities-Inline-Media.md): pictures in chat and private messages.
     pub const UPLOAD_MEDIA: u16 = 750;
     pub const DOWNLOAD_MEDIA: u16 = 751;
@@ -90,6 +93,15 @@ pub mod field {
     pub const MEDIA_MAX_FRAMES: u16 = 0x0210;
     pub const MEDIA_MAX_DURATION_MS: u16 = 0x0211;
     pub const MEDIA_ERROR_CODE: u16 = 0x0212;
+
+    pub const CHANNEL_ID: u16 = 0x0F01;
+    pub const HISTORY_BEFORE: u16 = 0x0F02;
+    pub const HISTORY_AFTER: u16 = 0x0F03;
+    pub const HISTORY_LIMIT: u16 = 0x0F04;
+    pub const HISTORY_ENTRY: u16 = 0x0F05;
+    pub const HISTORY_HAS_MORE: u16 = 0x0F06;
+    pub const HISTORY_MAX_MSGS: u16 = 0x0F07;
+    pub const HISTORY_MAX_DAYS: u16 = 0x0F08;
 
     pub const GIF_ICON_DATA: u16 = 0x0300;
     pub const ICON_LIST_ENTRY: u16 = 0x0301;
@@ -142,6 +154,7 @@ pub mod cap {
     pub const TEXT_ENCODING: u16 = 1 << 1;
     pub const VOICE: u16 = 1 << 2;
     pub const INLINE_MEDIA: u16 = 1 << 3;
+    pub const CHAT_HISTORY: u16 = 1 << 4;
     pub const MESSAGING: u16 = 1 << 6;
     pub const DIRECT_TRANSFER: u16 = 1 << 7;
     pub const MESSENGER_SESSION: u16 = 1 << 8;

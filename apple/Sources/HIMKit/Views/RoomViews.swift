@@ -16,6 +16,17 @@ public struct RoomView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        if room.hasEarlier {
+                            Button {
+                                Task { await room.loadEarlier() }
+                            } label: {
+                                if room.loadingEarlier { ProgressView().controlSize(.small) } else { Text("Earlier messages") }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
                         ForEach(Array(room.lines.enumerated()), id: \.element.id) { i, line in
                             RoomLineView(room: room, line: line,
                                          continued: i > 0 && room.lines[i - 1].kind == .chat && line.kind == .chat

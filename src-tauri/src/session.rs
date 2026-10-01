@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 type AppState<'a> = State<'a, Mutex<App>>;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Line {
     pub guid: String,
@@ -260,6 +260,7 @@ pub async fn do_sign_on(app: &AppHandle, req: SignOnRequest) -> Result<(), Strin
         security: req.security,
         classic: false,
         media: false,
+        history: false,
     };
 
     let _ = app.emit("signon-step", "Connecting...");
@@ -288,12 +289,14 @@ pub async fn do_sign_on(app: &AppHandle, req: SignOnRequest) -> Result<(), Strin
         }
         a.epoch += 1;
         let epoch = a.epoch;
+        // What was said before, kept on this computer.
+        let convos = crate::history::load(&crate::history::folder(&a, &account.key()));
         a.live = Some(Live {
             client: session.client.clone(),
             opts,
             account,
             roster: BTreeMap::new(),
-            convos: HashMap::new(),
+            convos,
             presence: Presence::Online,
             status: String::new(),
             auto_answered: HashSet::new(),
@@ -481,6 +484,7 @@ async fn pump(app: AppHandle, mut events: tokio::sync::mpsc::UnboundedReceiver<E
                     }
                 }
                 drop(a);
+                crate::history::save(&app, &login);
                 let _ = app.emit(
                     "ack",
                     serde_json::json!({ "login": login, "guid": guid, "state": state }),
@@ -685,6 +689,7 @@ fn on_message(app: &AppHandle, m: hotline_im::IncomingMessage) {
         .then(|| l.status.clone());
         (auto, l.client.clone())
     };
+    crate::history::save(app, &m.from);
     windows::open_im_window(app, &m.from, false);
     if let Some(text) = auto {
         let app = app.clone();
@@ -867,6 +872,7 @@ async fn send_line(
         }
     }
     let _ = app.emit("im", serde_json::json!({ "login": to, "line": line }));
+    crate::history::save(app, to);
     // One retry with the same GUID covers a timeout; the server de-duplicates.
     let mut result = client.send_im(to, &guid, body).await;
     if matches!(result, Err(Error::Timeout)) {
@@ -894,6 +900,7 @@ async fn send_line(
             line.state = x.state.clone();
         }
     }
+    crate::history::save(app, to);
     let _ = app.emit(
         "ack",
         serde_json::json!({ "login": to, "guid": line.guid, "state": line.state, "error": error }),
@@ -939,6 +946,7 @@ pub fn mark_read(app: AppHandle, state: AppState, login: String) {
     }
     drop(a);
     if any {
+        crate::history::save(&app, &login);
         emit_state(&app);
     }
 }

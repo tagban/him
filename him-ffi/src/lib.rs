@@ -310,6 +310,26 @@ pub struct MediaData {
     pub mime: String,
 }
 
+/// A remembered public chat line (chat history).
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HistoryEntry {
+    pub id: u64,
+    pub timestamp: i64,
+    pub nick: String,
+    pub text: String,
+    pub icon: u16,
+    pub emote: bool,
+    pub server: bool,
+    pub deleted: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HistoryPage {
+    /// Oldest first.
+    pub entries: Vec<HistoryEntry>,
+    pub has_more: bool,
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct GifIcon {
     pub user_id: u16,
@@ -335,6 +355,8 @@ pub struct ServerInfo {
     pub media: Option<MediaLimits>,
     /// Our user ID (chat rooms).
     pub user_id: u16,
+    /// The server keeps public chat's history.
+    pub chat_history: bool,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -379,6 +401,8 @@ pub struct SignOn {
     pub classic: bool,
     /// Ask a chat room's server for pictures in chat.
     pub media: bool,
+    /// Ask a chat room's server for its chat history.
+    pub history: bool,
 }
 
 // ---------- events ----------
@@ -476,6 +500,7 @@ pub async fn connect(sign_on: SignOn, listener: Arc<dyn EventListener>) -> Resul
             },
             classic: sign_on.classic,
             media: sign_on.media,
+            history: sign_on.history,
         };
         let s = hotline_im::connect(&opts).await?;
         let mut events = s.events;
@@ -519,6 +544,7 @@ impl Session {
                 max_frames: m.max_frames,
             }),
             user_id: i.user_id,
+            chat_history: i.chat_history,
         }
     }
 
@@ -700,6 +726,28 @@ impl Session {
     pub fn send_chat_media(&self, text: String, media: MediaRef) {
         let c = self.client.clone();
         RT.spawn(async move { c.send_chat_media(&text, &media.into()) });
+    }
+
+    // ----- chat history -----
+
+    /// The latest `limit` public chat lines, or those before / after a line's ID.
+    pub async fn chat_history(&self, before: Option<u64>, after: Option<u64>, limit: u16) -> Result<HistoryPage, HimError> {
+        let c = self.client.clone();
+        on_rt(async move {
+            let p = c.chat_history(before, after, limit).await?;
+            Ok(HistoryPage {
+                has_more: p.has_more,
+                entries: p
+                    .entries
+                    .into_iter()
+                    .map(|e| HistoryEntry {
+                        id: e.id, timestamp: e.timestamp, nick: e.nick, text: e.text, icon: e.icon,
+                        emote: e.emote, server: e.server, deleted: e.deleted,
+                    })
+                    .collect(),
+            })
+        })
+        .await
     }
 
     // ----- GIF icons -----

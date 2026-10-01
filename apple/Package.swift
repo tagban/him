@@ -1,25 +1,21 @@
 // swift-tools-version: 5.10
 // HIM, the modern macOS/iOS build: SwiftUI on the same Rust core (hotline-im) as the classic app.
-// scripts/build-core.sh builds the core and regenerates Sources/HIMCore first.
+// scripts/build-core.sh builds the core (HIMCoreFFI.xcframework) and regenerates Sources/HIMCore.
 import PackageDescription
-
-let core = Context.packageDirectory + "/../target/release"
 
 let package = Package(
     name: "HIM",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "HIMKit", targets: ["HIMKit"]),
-        .executable(name: "HIM", targets: ["HIMMac"]),
+        .executable(name: "HIMMac", targets: ["HIMMac"]),
     ],
     targets: [
-        .target(name: "HIMCoreFFI"),
+        .binaryTarget(name: "HIMCoreFFI", path: "HIMCoreFFI.xcframework"),
         .target(
             name: "HIMCore",
             dependencies: ["HIMCoreFFI"],
             linkerSettings: [
-                .unsafeFlags(["-L", core]),
-                .linkedLibrary("himffi"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
                 .linkedFramework("CoreFoundation"),

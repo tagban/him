@@ -83,6 +83,26 @@ struct Check {
         check(c.lines.first!.text == "hello there 🙂 😀", "our line shows faces as emoji: \(c.lines.first!.text)")
         check(await until { [.sent, .delivered, .read].contains(c.lines.first!.status) }, "our line is sent (\(c.lines.first!.status))")
 
+        // ---- files ----
+        let bob = AppModel()
+        await bob.signOn(login: "bob", password: "hotline", host: "127.0.0.1", port: port, savePassword: false, autoSignOn: false)
+        check(bob.phase == .online, "bob signs on too")
+        check(await until { app.buddies["bob"]?.presence == .online }, "alice sees bob online")
+        let pic = picture(w: 640, h: 480)
+        let picURL = FileManager.default.temporaryDirectory.appendingPathComponent("him-check.png")
+        try? pic.write(to: picURL)
+        let offerErr = await app.sendFile(picURL, to: "bob")
+        check(offerErr == nil, "alice offers bob a picture (\(offerErr ?? "ok"))")
+        let bc = bob.conversation("alice")
+        check(await until { bc.lines.contains { $0.file?.state == .incoming } }, "bob is asked to accept it")
+        let guid = bc.lines.last { $0.file != nil }!.file!.guid
+        bob.acceptFile(guid)
+        check(await until(15) { bc.lines.last { $0.file != nil }?.file?.state == .done }, "it arrives (\(String(describing: bc.lines.last { $0.file != nil }?.file?.state)))")
+        let saved = bc.lines.last { $0.file != nil }!.file!.path!
+        check((try? Data(contentsOf: URL(fileURLWithPath: saved))) == pic, "byte for byte, as \((saved as NSString).lastPathComponent)")
+        check(await until { app.conversation("bob").lines.last { $0.file != nil }?.file?.state == .done }, "alice sees it sent")
+        bob.signOff()
+
         // ---- chat rooms ----
         app.rooms.nick = "Alice"
         let room = app.rooms.join(host: "127.0.0.1", port: port, title: "Test")

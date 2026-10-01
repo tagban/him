@@ -845,6 +845,8 @@ public func FfiConverterTypeEventListener_lower(_ value: EventListener) -> UInt6
 
 public protocol SessionProtocol: AnyObject, Sendable {
     
+    func acceptFile(guid: String) async throws 
+    
     func ack(guid: String, from: String, kind: AckKind) 
     
     func addFriend(login: String, note: String) async throws 
@@ -862,6 +864,8 @@ public protocol SessionProtocol: AnyObject, Sendable {
      * The latest `limit` public chat lines, or those before / after a line's ID.
      */
     func chatHistory(before: UInt64?, after: UInt64?, limit: UInt16) async throws  -> HistoryPage
+    
+    func declineFile(guid: String) async throws 
     
     func disconnect() 
     
@@ -890,6 +894,16 @@ public protocol SessionProtocol: AnyObject, Sendable {
     
     func isOpen()  -> Bool
     
+    /**
+     * Offers `to` a file; the GUID it returns names the transfer from here on.
+     */
+    func offerFile(to: String, name: String, size: UInt64) async throws  -> String
+    
+    /**
+     * Receives a file into `folder` (named as the sender named it, made unique); its path.
+     */
+    func receiveFile(relayRef: UInt32, folder: String, progress: TransferProgress) async throws  -> String
+    
     func removeFriend(login: String) async throws 
     
     func respond(login: String, accept: Bool) async throws 
@@ -902,6 +916,11 @@ public protocol SessionProtocol: AnyObject, Sendable {
      * Chat with a picture; `text` is what clients without pictures see.
      */
     func sendChatMedia(text: String, media: MediaRef) 
+    
+    /**
+     * Sends the file at `path` as `name`, once FileReady gave us `relay_ref`.
+     */
+    func sendFile(relayRef: UInt32, path: String, name: String, progress: TransferProgress) async throws 
     
     /**
      * Sends an IM under `guid` (from `new_guid`, so the app can show it first).
@@ -1003,6 +1022,22 @@ open class Session: SessionProtocol, @unchecked Sendable {
     
 
     
+open func acceptFile(guid: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_accept_file(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(guid)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_void,
+            completeFunc: ffi_himffi_rust_future_complete_void,
+            freeFunc: ffi_himffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeHimError_lift
+        )
+}
+    
 open func ack(guid: String, from: String, kind: AckKind)  {try! rustCall() {
         uniffiCallStatus in
     uniffi_himffi_fn_method_session_ack(
@@ -1090,6 +1125,22 @@ open func chatHistory(before: UInt64?, after: UInt64?, limit: UInt16)async throw
             completeFunc: ffi_himffi_rust_future_complete_rust_buffer,
             freeFunc: ffi_himffi_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeHistoryPage_lift,
+            errorHandler: FfiConverterTypeHimError_lift
+        )
+}
+    
+open func declineFile(guid: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_decline_file(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(guid)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_void,
+            completeFunc: ffi_himffi_rust_future_complete_void,
+            freeFunc: ffi_himffi_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeHimError_lift
         )
 }
@@ -1260,6 +1311,44 @@ open func isOpen() -> Bool  {
 })
 }
     
+    /**
+     * Offers `to` a file; the GUID it returns names the transfer from here on.
+     */
+open func offerFile(to: String, name: String, size: UInt64)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_offer_file(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(to),FfiConverterString.lower(name),FfiConverterUInt64.lower(size)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_himffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_himffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeHimError_lift
+        )
+}
+    
+    /**
+     * Receives a file into `folder` (named as the sender named it, made unique); its path.
+     */
+open func receiveFile(relayRef: UInt32, folder: String, progress: TransferProgress)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_receive_file(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(relayRef),FfiConverterString.lower(folder),FfiConverterTypeTransferProgress_lower(progress)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_rust_buffer,
+            completeFunc: ffi_himffi_rust_future_complete_rust_buffer,
+            freeFunc: ffi_himffi_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeHimError_lift
+        )
+}
+    
 open func removeFriend(login: String)async throws   {
     return
         try  await uniffiRustCallAsync(
@@ -1329,6 +1418,25 @@ open func sendChatMedia(text: String, media: MediaRef)  {try! rustCall() {
         FfiConverterTypeMediaRef_lower(media),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Sends the file at `path` as `name`, once FileReady gave us `relay_ref`.
+     */
+open func sendFile(relayRef: UInt32, path: String, name: String, progress: TransferProgress)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_himffi_fn_method_session_send_file(
+                        self.uniffiCloneHandle(),FfiConverterUInt32.lower(relayRef),FfiConverterString.lower(path),FfiConverterString.lower(name),FfiConverterTypeTransferProgress_lower(progress)
+                )
+            },
+            pollFunc: ffi_himffi_rust_future_poll_void,
+            completeFunc: ffi_himffi_rust_future_complete_void,
+            freeFunc: ffi_himffi_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeHimError_lift
+        )
 }
     
     /**
@@ -1554,6 +1662,213 @@ public func FfiConverterTypeSession_lift(_ handle: UInt64) throws -> Session {
 #endif
 public func FfiConverterTypeSession_lower(_ value: Session) -> UInt64 {
     return FfiConverterTypeSession.lower(value)
+}
+
+
+
+
+
+
+/**
+ * How a transfer is going: called on a background thread now and then.
+ */
+public protocol TransferProgress: AnyObject, Sendable {
+    
+    func update(done: UInt64, total: UInt64) 
+    
+}
+/**
+ * How a transfer is going: called on a background thread now and then.
+ */
+open class TransferProgressImpl: TransferProgress, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_himffi_fn_clone_transferprogress(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_himffi_fn_free_transferprogress(handle, $0) }
+    }
+
+    
+
+    
+open func update(done: UInt64, total: UInt64)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_himffi_fn_method_transferprogress_update(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(done),
+        FfiConverterUInt64.lower(total),uniffiCallStatus
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceTransferProgress {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceTransferProgress = UniffiVTableCallbackInterfaceTransferProgress(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeTransferProgress.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface TransferProgress: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeTransferProgress.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface TransferProgress: handle missing in uniffiClone")
+            }
+        },
+        update: { (
+            uniffiHandle: UInt64,
+            done: UInt64,
+            total: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeTransferProgress.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.update(
+                     done: try FfiConverterUInt64.lift(done),
+                     total: try FfiConverterUInt64.lift(total)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceTransferProgress> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceTransferProgress>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitTransferProgress() {
+    uniffi_himffi_fn_init_callback_vtable_transferprogress(UniffiCallbackInterfaceTransferProgress.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTransferProgress: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<TransferProgress>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = TransferProgress
+
+    public static func lift(_ handle: UInt64) throws -> TransferProgress {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return TransferProgressImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: TransferProgress) -> UInt64 {
+         if let rustImpl = value as? TransferProgressImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TransferProgress {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: TransferProgress, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTransferProgress_lift(_ handle: UInt64) throws -> TransferProgress {
+    return try FfiConverterTypeTransferProgress.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTransferProgress_lower(_ value: TransferProgress) -> UInt64 {
+    return FfiConverterTypeTransferProgress.lower(value)
 }
 
 
@@ -3134,6 +3449,26 @@ public enum HimEvent: Equatable, Hashable {
      */
     case gifIconChanged(userId: UInt16
     )
+    /**
+     * A buddy offers us a file; answer with `accept_file` or `decline_file`.
+     */
+    case fileOffer(from: String, guid: String, name: String, size: UInt64
+    )
+    /**
+     * They took our file; FileReady follows.
+     */
+    case fileAccepted(guid: String
+    )
+    /**
+     * Turned down, or called off.
+     */
+    case fileDeclined(guid: String
+    )
+    /**
+     * Go: `send_file` or `receive_file` with this reference.
+     */
+    case fileReady(guid: String, relayRef: UInt32
+    )
     case serverMessage(text: String
     )
     /**
@@ -3200,13 +3535,25 @@ public struct FfiConverterTypeHimEvent: FfiConverterRustBuffer {
         case 12: return .gifIconChanged(userId: try FfiConverterUInt16.read(from: &buf)
         )
         
-        case 13: return .serverMessage(text: try FfiConverterString.read(from: &buf)
+        case 13: return .fileOffer(from: try FfiConverterString.read(from: &buf), guid: try FfiConverterString.read(from: &buf), name: try FfiConverterString.read(from: &buf), size: try FfiConverterUInt64.read(from: &buf)
         )
         
-        case 14: return .ownIconChanged(hash: try FfiConverterOptionString.read(from: &buf)
+        case 14: return .fileAccepted(guid: try FfiConverterString.read(from: &buf)
         )
         
-        case 15: return .disconnected(reason: try FfiConverterString.read(from: &buf)
+        case 15: return .fileDeclined(guid: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 16: return .fileReady(guid: try FfiConverterString.read(from: &buf), relayRef: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 17: return .serverMessage(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 18: return .ownIconChanged(hash: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 19: return .disconnected(reason: try FfiConverterString.read(from: &buf)
         )
         
         default: throw UniffiInternalError.unexpectedEnumCase
@@ -3286,18 +3633,42 @@ public struct FfiConverterTypeHimEvent: FfiConverterRustBuffer {
             FfiConverterUInt16.write(userId, into: &buf)
             
         
-        case let .serverMessage(text):
+        case let .fileOffer(from,guid,name,size):
             writeInt(&buf, Int32(13))
+            FfiConverterString.write(from, into: &buf)
+            FfiConverterString.write(guid, into: &buf)
+            FfiConverterString.write(name, into: &buf)
+            FfiConverterUInt64.write(size, into: &buf)
+            
+        
+        case let .fileAccepted(guid):
+            writeInt(&buf, Int32(14))
+            FfiConverterString.write(guid, into: &buf)
+            
+        
+        case let .fileDeclined(guid):
+            writeInt(&buf, Int32(15))
+            FfiConverterString.write(guid, into: &buf)
+            
+        
+        case let .fileReady(guid,relayRef):
+            writeInt(&buf, Int32(16))
+            FfiConverterString.write(guid, into: &buf)
+            FfiConverterUInt32.write(relayRef, into: &buf)
+            
+        
+        case let .serverMessage(text):
+            writeInt(&buf, Int32(17))
             FfiConverterString.write(text, into: &buf)
             
         
         case let .ownIconChanged(hash):
-            writeInt(&buf, Int32(14))
+            writeInt(&buf, Int32(18))
             FfiConverterOptionString.write(hash, into: &buf)
             
         
         case let .disconnected(reason):
-            writeInt(&buf, Int32(15))
+            writeInt(&buf, Int32(19))
             FfiConverterString.write(reason, into: &buf)
             
         }
@@ -4211,6 +4582,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_himffi_checksum_method_eventlistener_on_event() != 29756) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_himffi_checksum_method_session_accept_file() != 7662) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_himffi_checksum_method_session_ack() != 12819) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4227,6 +4601,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_chat_history() != 16575) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_himffi_checksum_method_session_decline_file() != 23887) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_disconnect() != 47302) {
@@ -4265,6 +4642,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_himffi_checksum_method_session_is_open() != 64206) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_himffi_checksum_method_session_offer_file() != 9766) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_himffi_checksum_method_session_receive_file() != 45516) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_himffi_checksum_method_session_remove_friend() != 13916) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4278,6 +4661,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_send_chat_media() != 60734) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_himffi_checksum_method_session_send_file() != 62897) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_himffi_checksum_method_session_send_im() != 47875) {
@@ -4310,8 +4696,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_himffi_checksum_method_session_upload_media() != 58818) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_himffi_checksum_method_transferprogress_update() != 43035) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
     uniffiCallbackInitEventListener()
+    uniffiCallbackInitTransferProgress()
     return InitializationResult.ok
 }()
 

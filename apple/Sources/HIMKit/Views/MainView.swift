@@ -17,7 +17,7 @@ public struct RootView: View {
         .environment(app.classicIcons)
         .tint(Brand.accent)
         .animation(.smooth, value: app.phase == .signedOff)
-        .onAppear { Notifier.shared.requestPermission() }
+
     }
 }
 
@@ -40,13 +40,18 @@ struct MainView: View {
     @State private var addingBuddy = false
     @State private var browsing = false
     @State private var filter = ""
+    /// iOS: what each tab has open.
+    @State private var paths: [Tab: [Target]] = [:]
 
     var body: some View {
         content
             .sheet(isPresented: $editingMe) { ProfileView() }
             .sheet(isPresented: $addingBuddy) { AddBuddyView() }
             .sheet(isPresented: $browsing) { RoomBrowser() }
-            .onAppear { if app.phase == .guest { tab = .rooms } }
+            .onAppear {
+                if app.phase == .guest { tab = .rooms }
+                Notifier.shared.requestPermission()  // once you're in, not on the first screen
+            }
             .overlay(alignment: .top) { NoticeBanner() }
     }
 
@@ -89,7 +94,7 @@ struct MainView: View {
     @ViewBuilder private var content: some View {
         TabView(selection: $tab) {
             ForEach(availableTabs) { t in
-                NavigationStack {
+                NavigationStack(path: Binding(get: { paths[t] ?? [] }, set: { paths[t] = $0 })) {
                     List {
                         if t == .buddies {
                             MeHeader(editing: $editingMe).listRowBackground(Color.clear)
@@ -97,7 +102,9 @@ struct MainView: View {
                         listContent(for: t)
                     }
                     .navigationTitle(t.rawValue)
-                    .navigationDestination(for: Target.self) { target in destination(target) }
+                    .navigationDestination(for: Target.self) { target in
+                        destination(target).toolbar(.hidden, for: .tabBar)
+                    }
                     .toolbar {
                         ToolbarItem(placement: .primaryAction) {
                             if t == .rooms {
@@ -112,6 +119,21 @@ struct MainView: View {
                 .tabItem { Label(t.rawValue, systemImage: t.symbol) }
                 .badge(t == .chats ? app.unreadTotal : 0)
                 .tag(t)
+            }
+        }
+        // Something asked to show a conversation or room (a notification, "Send Message"): go there.
+        .onChange(of: app.target) { _, t in
+            guard let t else { return }
+            switch t {
+            case .im: tab = .chats
+            case .room: tab = .rooms
+            }
+            if paths[tab]?.last != t { paths[tab] = [t] }
+        }
+        .task {
+            if let t = app.target {  // already set before this view appeared (sign-on hooks)
+                tab = { if case .room = t { return .rooms } else { return .chats } }()
+                paths[tab] = [t]
             }
         }
     }
@@ -166,7 +188,7 @@ struct NoticeBanner: View {
     var body: some View {
         if let n = app.notice {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "megaphone.fill").foregroundStyle(Color.accentColor)
+                Image(systemName: "megaphone.fill").foregroundStyle(Brand.accent)
                 Text(n).font(.callout).textSelection(.enabled)
                 Spacer(minLength: 0)
                 Button { app.notice = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }

@@ -1,4 +1,0 @@
-module HIMCoreFFI {
-    header "HIMCoreFFI.h"
-    export *
-}

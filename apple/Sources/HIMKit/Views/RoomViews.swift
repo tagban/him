@@ -57,7 +57,7 @@ public struct RoomView: View {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 30)).symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Brand.accent)
                 .disabled(room.state != .joined || room.draft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 12)
@@ -177,7 +177,7 @@ private struct RoomLineView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(line.name)
                                 .fontWeight(.semibold)
-                                .foregroundStyle(line.mine ? Color.accentColor : nameColor(line.name))
+                                .foregroundStyle(line.mine ? Brand.accent : nameColor(line.name))
                             Text(line.date.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.tertiary)
                         }
                     }

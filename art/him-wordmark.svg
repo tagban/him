@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 32 16">
+  <!-- "HIM" in the Hotline H's style: beveled red stems that end in points, the I
+       pointed at both ends, and the M's stems dropping to points like the H's right
+       stem. A darker layer shows on the right of each stroke and under the bars. -->
+  <defs>
+    <linearGradient id="hf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff2a1e"/>
+      <stop offset="1" stop-color="#d80000"/>
+    </linearGradient>
+  </defs>
+  <g stroke="#3a0000" stroke-width="0.35" stroke-linejoin="round" fill="#8a0000">
+    <!-- H -->
+    <path d="M0 2L3 0V13H0Z M7 2H10V12L7 14Z M3 6H7V9H3Z"/>
+    <!-- I -->
+    <path d="M12 2L15 0V12L12 14Z"/>
+    <!-- M -->
+    <path d="M17 1L20 0V12L17 14Z M27 1L30 0V12L27 14Z M20 0L23.5 6L27 1V4.5L23.5 10L20 4Z"/>
+  </g>
+  <g fill="url(#hf)">
+    <path d="M0 2L2 0.667V13H0Z M7 2H9V12.667L7 14Z M0 6H9V8H0Z"/>
+    <path d="M12 2L14 0.667V12.667L12 14Z"/>
+    <path d="M17 1L19 0.333V12.667L17 14Z M27 1L29 0.333V12.667L27 14Z M19 0.333L23.5 6.2L27 1V3.4L23.5 8.6L19 2.9Z"/>
+  </g>
+  <g stroke="#ff9a90" stroke-width="0.3" stroke-linecap="round">
+    <path d="M0.35 2.2L1.65 1.35 M12.35 2.2L13.65 1.35 M17.35 1.2L18.65 0.75 M27.35 1.2L28.65 0.75"/>
+  </g>
+</svg>

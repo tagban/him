@@ -74,7 +74,7 @@ struct ConversationRow: View {
                         if conversation.typing {
                             Text("typing…").italic()
                         } else if let last = conversation.lines.last {
-                            Text((last.direction == .outgoing ? "You: " : "") + last.text)
+                            Text((last.direction == .outgoing ? "You: " : "") + (last.file.map { "📎 \($0.name)" } ?? last.text))
                         }
                     }
                     .font(.callout)
@@ -87,7 +87,7 @@ struct ConversationRow: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.accentColor, in: Capsule())
+                            .background(Brand.accent, in: Capsule())
                     }
                 }
             }
@@ -121,7 +121,7 @@ struct RoomRow: View {
             }
             Spacer(minLength: 0)
             if room.unread > 0 {
-                Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                Circle().fill(Brand.accent).frame(width: 8, height: 8)
             }
         }
         .padding(.vertical, 2)

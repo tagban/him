@@ -1,5 +1,10 @@
 import HIMCore
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
+#if os(macOS)
+import AppKit
+#endif
 
 /// Text with its links made tappable.
 func linkified(_ s: String) -> AttributedString {
@@ -39,9 +44,13 @@ public struct ConversationView: View {
                                     .padding(.top, 14)
                                     .padding(.bottom, 6)
                             }
-                            Bubble(line: line, login: login,
-                                   first: isFirst(c.lines, i), last: isLast(c.lines, i),
-                                   showStatus: line.direction == .outgoing && i == c.lines.lastIndex { $0.direction == .outgoing })
+                            if line.file != nil {
+                                FileCard(line: line, login: login)
+                            } else {
+                                Bubble(line: line, login: login,
+                                       first: isFirst(c.lines, i), last: isLast(c.lines, i),
+                                       showStatus: line.direction == .outgoing && i == c.lines.lastIndex { $0.direction == .outgoing && $0.file == nil })
+                            }
                         }
                         if c.typing {
                             TypingBubble(login: login).transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottomLeading)))
@@ -62,6 +71,8 @@ public struct ConversationView: View {
         .navigationTitle(buddy?.shownName ?? login)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #else
+        .hidingWindowTitle()
         #endif
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -75,6 +86,12 @@ public struct ConversationView: View {
             }
         }
         .sheet(isPresented: $showInfo) { BuddyInfoView(login: login) }
+        #if os(macOS)
+        .dropDestination(for: URL.self) { urls, _ in
+            for u in urls { Task { if let e = await app.sendFile(u, to: login) { app.notice = e } } }
+            return !urls.isEmpty
+        }
+        #endif
         .onAppear { app.markRead(login); composing = true }
         .onChange(of: c.lines.count) { app.markRead(login) }
     }
@@ -162,7 +179,7 @@ private struct Bubble: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .foregroundStyle(mine ? .white : .primary)
-                .background(shape.fill(mine ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.fill.tertiary)))
+                .background(shape.fill(mine ? AnyShapeStyle(Brand.accent.gradient) : AnyShapeStyle(.fill.tertiary)))
                 .opacity(line.status == .sending ? 0.7 : 1)
                 .help(line.date.formatted(date: .abbreviated, time: .shortened))
                 if !mine { Spacer(minLength: 48) }
@@ -238,8 +255,43 @@ private struct Composer: View {
 
     private var empty: Bool { conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
+    @State private var pickingFile = false
+    @State private var photo: PhotosPickerItem?
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            Menu {
+                Button { pickingFile = true } label: { Label("Send a File…", systemImage: "doc") }
+                #if os(iOS)
+                PhotosPicker(selection: $photo, matching: .images) { Label("Send a Picture…", systemImage: "photo") }
+                #endif
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 26))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(!app.isSignedOn)
+            .help("Send a picture or file")
+            .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.item]) { result in
+                guard case .success(let url) = result else { return }
+                send(url)
+            }
+            .onChange(of: photo) {
+                guard let photo else { return }
+                Task {
+                    if let d = try? await photo.loadTransferable(type: Data.self) {
+                        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Picture-\(Int(Date().timeIntervalSince1970)).jpg")
+                        try? d.write(to: url)
+                        send(url)
+                    }
+                    self.photo = nil
+                }
+            }
             TextField("Message", text: $conversation.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
@@ -258,13 +310,17 @@ private struct Composer: View {
                     .symbolRenderingMode(.hierarchical)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(empty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
+            .foregroundStyle(empty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Brand.accent))
             .disabled(empty || !app.isSignedOn)
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    private func send(_ url: URL) {
+        Task { if let e = await app.sendFile(url, to: conversation.login) { app.notice = e } }
     }
 
     private func send() {
@@ -274,3 +330,113 @@ private struct Composer: View {
         focus.wrappedValue = true
     }
 }
+
+/// A file between you and a buddy: what it is, how it's going, and what you can do.
+private struct FileCard: View {
+    @Environment(AppModel.self) private var app
+    let line: Line
+    let login: String
+
+    private var mine: Bool { line.direction == .outgoing }
+
+    var body: some View {
+        let f = line.file!
+        HStack {
+            if mine { Spacer(minLength: 48) }
+            VStack(alignment: .leading, spacing: 8) {
+                if f.state == .done, f.isPicture, let path = f.path, let img = picture(path) {
+                    IconImage(image: img)
+                        .frame(maxWidth: 280, maxHeight: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .onTapGesture { open(path) }
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: f.isPicture ? "photo" : "doc.fill")
+                        .font(.title2)
+                        .foregroundStyle(Brand.accent)
+                        .frame(width: 34, height: 34)
+                        .background(Brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(f.name).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
+                        Text(detail(f)).font(.caption).foregroundStyle(isBad(f) ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    }
+                    Spacer(minLength: 0)
+                }
+                if case .moving(let p) = f.state {
+                    ProgressView(value: p)
+                }
+                actions(f)
+            }
+            .padding(12)
+            .frame(width: 300, alignment: .leading)
+            .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            if !mine { Spacer(minLength: 48) }
+        }
+        .padding(.top, 6)
+    }
+
+    @ViewBuilder private func actions(_ f: SharedFile) -> some View {
+        switch f.state {
+        case .incoming:
+            HStack {
+                Button("Accept") { app.acceptFile(f.guid) }.buttonStyle(.borderedProminent)
+                Button("Decline") { app.declineFile(f.guid) }.buttonStyle(.bordered)
+            }
+            .controlSize(.small)
+        case .offered:
+            Button("Cancel") { app.declineFile(f.guid) }.buttonStyle(.bordered).controlSize(.small)
+        case .done where !mine:
+            if let path = f.path {
+                HStack {
+                    Button("Open") { open(path) }
+                    #if os(macOS)
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                    #else
+                    ShareLink(item: URL(fileURLWithPath: path))
+                    #endif
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func detail(_ f: SharedFile) -> String {
+        let size = ByteCountFormatter.string(fromByteCount: Int64(f.size), countStyle: .file)
+        switch f.state {
+        case .offered: return "\(size) · waiting for them to accept"
+        case .incoming: return "\(size) · wants to send you this"
+        case .starting: return "\(size) · starting…"
+        case .moving(let p): return "\(size) · \(Int(p * 100))%"
+        case .done: return mine ? "\(size) · sent" : "\(size) · saved"
+        case .declined: return mine ? "\(size) · not taken" : "\(size) · declined"
+        case .failed(let why): return "Didn't go: \(why)"
+        }
+    }
+
+    private func isBad(_ f: SharedFile) -> Bool {
+        if case .failed = f.state { return true }
+        return false
+    }
+
+    private func picture(_ path: String) -> DecodedImage? {
+        (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap(DecodedImage.init(data:))
+    }
+
+    private func open(_ path: String) {
+        #if os(macOS)
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        #endif
+    }
+}
+
+#if os(macOS)
+private extension View {
+    /// The toolbar shows the name already; the window title would repeat it.
+    @ViewBuilder func hidingWindowTitle() -> some View {
+        if #available(macOS 15, *) { toolbar(removing: .title) } else { self }
+    }
+}
+#endif

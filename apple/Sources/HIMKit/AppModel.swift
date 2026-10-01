@@ -20,12 +20,41 @@ public struct Line: Identifiable, Equatable, Codable {
     public let body: String
     public let date: Date
     public var status: Status
+    /// A file sent or offered on this line.
+    public var file: SharedFile? = nil
     /// An away message sent automatically.
     public var isAuto: Bool { body.hasPrefix(Self.autoPrefix) }
     /// What to show: without the auto-reply prefix, and with text faces as emoji.
     public var text: String { facesToEmoji(text: isAuto ? String(body.dropFirst(Self.autoPrefix.count)) : body) }
 
     static let autoPrefix = "Auto-response: "
+}
+
+/// A file going between buddies, as one line of the conversation.
+public struct SharedFile: Equatable, Codable {
+    public enum State: Equatable, Codable {
+        /// Ours: waiting for them to accept.
+        case offered
+        /// Theirs: waiting for us to answer.
+        case incoming
+        /// Accepted, about to start.
+        case starting
+        case moving(Double)
+        case done
+        case declined
+        case failed(String)
+    }
+
+    public let guid: String
+    public let name: String
+    public let size: UInt64
+    /// On this device: what we're sending, or where theirs was saved.
+    public var path: String?
+    public var state: State
+
+    public var isPicture: Bool {
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "bmp", "tiff"].contains((name as NSString).pathExtension.lowercased())
+    }
 }
 
 @MainActor @Observable
@@ -311,6 +340,24 @@ public final class AppModel {
             icons.fetch(login: login, hash: hash, from: session)
         case .disconnected(let reason):
             if signOn != nil { reconnect(after: reason) }
+        case .fileOffer(let from, let guid, let name, let size):
+            let c = conversation(from)
+            var line = Line(id: guid, direction: .incoming, body: name, date: .now, status: .unread)
+            line.file = SharedFile(guid: guid, name: transferName(name), size: size, path: nil, state: .incoming)
+            c.lines.append(line)
+            saved(c)
+            Notifier.shared.post(title: self.name(of: from), body: "Wants to send you \(name)", id: "im-\(from)")
+        case .fileAccepted(let guid):
+            updateFile(guid) { if $0.state == .offered { $0.state = .starting } }
+        case .fileDeclined(let guid):
+            updateFile(guid) { f in
+                switch f.state {
+                case .done, .failed: break
+                default: f.state = .declined
+                }
+            }
+        case .fileReady(let guid, let relayRef):
+            startTransfer(guid, relayRef)
         case .chat, .userChanged, .userLeft, .privateMessage, .gifIconChanged:
             break  // chat rooms have their own sessions
         }
@@ -411,6 +458,124 @@ public final class AppModel {
     public func open(_ login: String) {
         _ = conversation(login)
         target = .im(login)
+    }
+
+    // ---------- files ----------
+
+    /// Where files from buddies go: Downloads/HIM on the Mac, the app's Documents on iOS.
+    public static var receivedFolder: URL {
+        if let dir = ProcessInfo.processInfo.environment["HIM_RECEIVED_DIR"] {  // tests
+            return URL(fileURLWithPath: dir, isDirectory: true)
+        }
+        #if os(macOS)
+        let base = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("HIM", isDirectory: true)
+        #else
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Received", isDirectory: true)
+        #endif
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    /// A safe, short name for showing.
+    private func transferName(_ n: String) -> String {
+        let last = n.split(whereSeparator: { $0 == "/" || $0 == "\\" || $0 == ":" }).last.map(String.init) ?? n
+        return last.isEmpty ? "file" : String(last.prefix(120))
+    }
+
+    /// Offers a buddy a file. Pictures are shrunk first (to 2048 px, a few MB); other files go as they are.
+    public func sendFile(_ url: URL, to login: String) async -> String? {
+        guard let s = session else { return "You're not signed on." }
+        guard buddies[login]?.state == .accepted, buddies[login]?.presence.isOnline == true else {
+            return "Files can only go to a buddy who's online."
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        // A copy of our own, so the file stays readable however long they take to accept.
+        let outbox = dataFolder("outgoing")
+        var name = url.lastPathComponent
+        var copy = outbox.appendingPathComponent(UUID().uuidString + "-" + name)
+        do {
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            if let small = Shrink.forIM(data) {
+                if Shrink.isJPEG(small), !["jpg", "jpeg"].contains(url.pathExtension.lowercased()) {
+                    name = url.deletingPathExtension().lastPathComponent + ".jpg"
+                    copy = outbox.appendingPathComponent(UUID().uuidString + "-" + name)
+                }
+                try small.write(to: copy)
+            } else {
+                try FileManager.default.copyItem(at: url, to: copy)
+            }
+        } catch {
+            return "That file couldn't be read."
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: copy.path)[.size] as? UInt64) ?? 0
+        do {
+            let guid = try await s.offerFile(to: login, name: name, size: size)
+            let c = conversation(login)
+            var line = Line(id: guid, direction: .outgoing, body: name, date: .now, status: .sent)
+            line.file = SharedFile(guid: guid, name: name, size: size, path: copy.path, state: .offered)
+            c.lines.append(line)
+            saved(c)
+            return nil
+        } catch {
+            try? FileManager.default.removeItem(at: copy)
+            return describe(error)
+        }
+    }
+
+    public func acceptFile(_ guid: String) {
+        guard let s = session else { return }
+        updateFile(guid) { $0.state = .starting }
+        Task {
+            do { try await s.acceptFile(guid: guid) } catch { updateFile(guid) { $0.state = .failed(describe(error)) } }
+        }
+    }
+
+    /// Turns down their file, or calls off ours.
+    public func declineFile(_ guid: String) {
+        updateFile(guid) { $0.state = .declined }
+        if let s = session { Task { try? await s.declineFile(guid: guid) } }
+    }
+
+    private func startTransfer(_ guid: String, _ relayRef: UInt32) {
+        guard let s = session, let (c, i) = fileLine(guid), let f = c.lines[i].file else { return }
+        let incoming = c.lines[i].direction == .incoming
+        updateFile(guid) { $0.state = .moving(0) }
+        let progress = ProgressSink { [weak self] done, total in
+            Task { @MainActor in
+                self?.updateFile(guid) { $0.state = .moving(total > 0 ? Double(done) / Double(total) : 0) }
+            }
+        }
+        Task {
+            do {
+                if incoming {
+                    let path = try await s.receiveFile(relayRef: relayRef, folder: Self.receivedFolder.path, progress: progress)
+                    updateFile(guid) { $0.path = path; $0.state = .done }
+                } else {
+                    try await s.sendFile(relayRef: relayRef, path: f.path ?? "", name: f.name, progress: progress)
+                    updateFile(guid) { $0.state = .done }
+                }
+            } catch {
+                updateFile(guid) { $0.state = .failed(describe(error)) }
+            }
+        }
+    }
+
+    private func fileLine(_ guid: String) -> (Conversation, Int)? {
+        for c in conversations.values {
+            if let i = c.lines.lastIndex(where: { $0.file?.guid == guid }) { return (c, i) }
+        }
+        return nil
+    }
+
+    private func updateFile(_ guid: String, _ change: (inout SharedFile) -> Void) {
+        guard let (c, i) = fileLine(guid), var f = c.lines[i].file else { return }
+        let was = f.state
+        change(&f)
+        c.lines[i].file = f
+        // Progress is noisy: only settled states are worth writing down.
+        if case .moving = f.state, case .moving = was { return }
+        saved(c)
     }
 
     // ---------- presence ----------

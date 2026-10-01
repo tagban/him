@@ -181,3 +181,25 @@ final class MediaStore {
 
     func didFail(_ m: MediaRef) -> Bool { failed.contains(m.id) }
 }
+
+/// Hands the core's transfer progress to a closure.
+final class ProgressSink: TransferProgress, @unchecked Sendable {
+    private let f: (UInt64, UInt64) -> Void
+    init(_ f: @escaping (UInt64, UInt64) -> Void) { self.f = f }
+    func update(done: UInt64, total: UInt64) { f(done, total) }
+}
+
+extension Shrink {
+    /// A picture for an IM: big photos come down to 2048 px and a few MB; small pictures
+    /// and animations under 8 MB go as they are. Nil for anything that isn't a picture.
+    static func forIM(_ data: Data) -> Data? {
+        guard let img = DecodedImage(data: data) else { return nil }
+        let w = img.frames[0].width, h = img.frames[0].height
+        if img.isAnimated { return data.count <= 8 << 20 ? data : animatedGIF(img, maxSide: 640, maxFrames: 120) }
+        if max(w, h) <= 2048, data.count <= 4 << 20 { return data }
+        let limits = MediaLimits(maxBytes: 4 << 20, maxDimension: 2048, maxPixels: 2048 * 2048, maxFrames: 1)
+        return forChat(data, limits: limits)
+    }
+
+    static func isJPEG(_ d: Data) -> Bool { d.starts(with: [0xFF, 0xD8]) }
+}

@@ -1,26 +1,5 @@
 import SwiftUI
 
-/// The app's mark: two speech bubbles on a gradient tile.
-public struct AppMark: View {
-    var size: CGFloat = 72
-
-    public init(size: CGFloat = 72) { self.size = size }
-
-    public var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-            .fill(LinearGradient(colors: [Color(red: 0.33, green: 0.62, blue: 1.0), Color(red: 0.36, green: 0.30, blue: 0.95)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: "bubble.left.and.bubble.right.fill")
-                    .font(.system(size: size * 0.44, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.15), radius: 2, y: 1)
-            }
-            .shadow(color: .indigo.opacity(0.25), radius: size * 0.15, y: size * 0.06)
-    }
-}
-
 public struct SignOnView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openURL) private var openURL
@@ -75,7 +54,7 @@ public struct SignOnView: View {
                             Text(host).font(.caption).foregroundStyle(.secondary)
                         }
                     } icon: {
-                        Image(systemName: "server.rack").foregroundStyle(Color.accentColor)
+                        Image(systemName: "server.rack").foregroundStyle(Brand.accent)
                     }
                     DisclosureGroup("Use a different server", isExpanded: $showServer) { serverFields }
                         .font(.callout)
@@ -123,6 +102,7 @@ public struct SignOnView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var serverFields: some View {
@@ -255,6 +235,7 @@ public struct SignOnView: View {
             .animation(.snappy, value: app.signOnError)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var backdrop: some View {

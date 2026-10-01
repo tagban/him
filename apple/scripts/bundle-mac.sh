@@ -5,9 +5,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
-swift build -c "$CONFIG" 2>&1 | grep -v "was built for newer" || true
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/HIM"
-[ -x "$BIN" ] || { echo "build failed" >&2; exit 1; }
+if ! swift build -c "$CONFIG" > build.log 2>&1; then
+  grep -E "error" build.log >&2
+  echo "build failed (apple/build.log)" >&2
+  exit 1
+fi
+BIN="$(swift build -c "$CONFIG" --show-bin-path)/HIMMac"
 APP="build/HIM Modern.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

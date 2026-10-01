@@ -69,7 +69,7 @@ In App Store Connect, on the app:
      `appreview`) with a buddy or two, and put its name and password here. Reviewers must be
      able to sign on, so VesperNet has to be up during review.
    - **Notes**: "HIM is an instant messenger for the Hotline network. It signs on to VesperNet
-     by default (sign-up at vespernet.net/register). Chat Rooms are public chats on Hotline
+     by default (sign-up at agora.vespernet.net/messenger). Chat Rooms are public chats on Hotline
      servers listed by the Hotline trackers. Ignore and Report are in a room's People list
      (long-press a name); Block and Report are in a buddy's Info."
 7. **Build**: pick the TestFlight build, then **Add for Review → Submit**. Review usually takes

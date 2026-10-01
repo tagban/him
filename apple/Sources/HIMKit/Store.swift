@@ -5,7 +5,7 @@ import Security
 public enum Defaults {
     public static let host = "hotline.vespernet.net"
     public static let port: UInt16 = 5500
-    public static let signupPages = ["hotline.vespernet.net": "https://vespernet.net/register"]
+    public static let signupPages = ["hotline.vespernet.net": "https://agora.vespernet.net/messenger"]
 
     /// Friendly names for servers HIM knows.
     public static let serverNames = ["hotline.vespernet.net": "VesperNet"]

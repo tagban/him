@@ -15,7 +15,7 @@ pub const DEFAULT_PORT: u16 = 5500;
 
 /// Servers whose accounts can be made on a web page ("Get a Screen Name"). Hotline
 /// has no sign-up transaction; accounts are made by the server's operators.
-pub const SIGNUP_PAGES: &[(&str, &str)] = &[("hotline.vespernet.net", "https://vespernet.net/register")];
+pub const SIGNUP_PAGES: &[(&str, &str)] = &[("hotline.vespernet.net", "https://agora.vespernet.net/messenger")];
 
 /// Buddies HIM suggests on a server, optional: (host, login, name, about).
 pub const SUGGESTED_BUDDIES: &[(&str, &str, &str, &str)] = &[

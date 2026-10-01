@@ -60,6 +60,11 @@ impl Rooms {
     }
 }
 
+/// The classic icon other Hotline users see beside someone in a room from HIM Classic:
+/// 25901, the ICQ flower (a messenger, not a standard Hotline connection). HIM's own
+/// rooms show no icons (the AIM look). Adium and Pidgin's plugin wears 2537.
+const ROOM_ICON: u16 = 25901;
+
 pub fn room_id(host: &str, port: u16) -> String {
     format!("{host}:{port}")
         .bytes()
@@ -259,8 +264,9 @@ async fn connect_room(app: AppHandle, id: String) {
                 login: String::new(),
                 password: String::new(),
                 nickname: room.nick.clone(),
-                // No icon: rooms show names only, like AIM's.
-                icon: 0,
+                // HIM's rooms show names only, like AIM's; the Hotline users there see
+                // ROOM_ICON beside us.
+                icon: ROOM_ICON,
                 security: Security::Auto,
                 classic: true,
                 media: false,
@@ -400,7 +406,7 @@ async fn pump(
                     }
                 };
                 if let Some(c) = client {
-                    c.agree_nowait(&nick, 0);
+                    c.agree_nowait(&nick, ROOM_ICON);
                     // Some servers only list users once the agreement is accepted.
                     load_users(&app, &id, epoch, &c).await;
                 }

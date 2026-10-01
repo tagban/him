@@ -263,6 +263,8 @@ async fn connect_room(app: AppHandle, id: String) {
                 icon: 0,
                 security: Security::Auto,
                 classic: true,
+                media: false,
+                history: true,
             },
             room.epoch,
         )
@@ -322,6 +324,40 @@ async fn connect_room(app: AppHandle, id: String) {
     }
     tauri::async_runtime::spawn(pump(app.clone(), id.clone(), epoch, session.events));
     load_users(&app, &id, epoch, &client).await;
+    load_history(&app, &id, epoch, &client).await;
+}
+
+/// What was said before we came in, from servers that keep chat history.
+async fn load_history(app: &AppHandle, id: &str, epoch: u64, client: &Client) {
+    if !client.info.chat_history {
+        return;
+    }
+    let Ok(page) = client.chat_history(None, None, 50).await else { return };
+    update(app, id, epoch, |room| {
+        let earlier: Vec<RoomLine> = page
+            .entries
+            .iter()
+            .map(|e| {
+                let (kind, name, text) = if e.deleted {
+                    ("system", String::new(), "[message removed]".to_string())
+                } else if e.server {
+                    ("system", String::new(), e.text.clone())
+                } else if e.emote {
+                    ("emote", String::new(), format!("{} {}", e.nick, e.text))
+                } else {
+                    ("chat", e.nick.clone(), e.text.clone())
+                };
+                RoomLine {
+                    kind: kind.into(),
+                    mine: name == room.nick,
+                    name,
+                    text,
+                    ts: e.timestamp.max(0) as u64,
+                }
+            })
+            .collect();
+        room.lines.splice(0..0, earlier);
+    });
 }
 
 async fn load_users(app: &AppHandle, id: &str, epoch: u64, client: &Client) {
@@ -373,6 +409,7 @@ async fn pump(
             Event::ChatMessage {
                 chat_id: None,
                 text,
+                ..
             } => update(&app, &id, epoch, |room| {
                 for raw in text.split(['\r', '\n']).filter(|l| !l.trim().is_empty()) {
                     let (kind, name, body) = parse_chat(raw);
@@ -561,7 +598,9 @@ pub fn room_send(rooms: RoomsState, id: String, text: String) -> Result<(), Stri
         .as_ref()
         .filter(|_| room.state == "in")
         .ok_or("You're not in the room right now.")?;
-    let text = text.trim_end();
+    // Hotline clients can't show modern emoji: they go as plain text (😀 → :D).
+    let text = hotline_im::emoticons::to_faces(text.trim_end());
+    let text = text.as_str();
     if text.trim().is_empty() {
         return Ok(());
     }

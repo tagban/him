@@ -25,6 +25,8 @@ fn opts(s: &MockServer, login: &str, security: Security) -> ConnectOptions {
         icon: 0,
         security,
         classic: false,
+        media: false,
+        history: false,
     }
 }
 
@@ -273,6 +275,8 @@ fn guest(s: &MockServer, nick: &str) -> ConnectOptions {
         icon: 0,
         security: Security::Auto,
         classic: true,
+        media: false,
+        history: false,
     }
 }
 
@@ -308,7 +312,7 @@ async fn guests_chat_in_a_room_and_messengers_stay_hidden() {
     assert_eq!(names, vec!["RoomieA", "RoomieB"]);
 
     b.client.send_chat("hello room ✨", false);
-    let Event::ChatMessage { text, chat_id } =
+    let Event::ChatMessage { text, chat_id, .. } =
         next(&mut a.events, |e| matches!(e, Event::ChatMessage { .. })).await
     else {
         unreachable!()
@@ -508,4 +512,139 @@ async fn no_buddy_icons_without_the_limit() {
     let a = connect(&opts(&s, "alice", Security::Auto)).await.unwrap();
     assert!(!a.client.has_buddy_icons());
     assert!(a.client.set_buddy_icon(&gif(48, 48, 1)).await.is_err());
+}
+
+#[tokio::test]
+async fn pictures_and_gif_icons_in_a_room() {
+    let s = server(MockConfig::default()).await;
+    let with_media = |nick: &str| ConnectOptions { media: true, history: true, ..guest(&s, nick) };
+    let mut a = hotline_im::connect(&with_media("PicA")).await.unwrap();
+    let b = hotline_im::connect(&with_media("PicB")).await.unwrap();
+    let mut old = hotline_im::connect(&guest(&s, "OldC")).await.unwrap();
+    assert!(a.client.media_limits().is_some());
+    assert!(old.client.media_limits().is_none());
+
+    // A picture bigger than one chunk goes up in parts and comes back whole.
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend((0..10_000u32).map(|i| (i * 7) as u8));
+    let m = b.client.upload_media(&png).await.unwrap();
+    assert_eq!(m.mime, "image/png");
+    b.client.send_chat_media("[image]", &m);
+    let Event::ChatMessage { text, media, .. } =
+        next(&mut a.events, |e| matches!(e, Event::ChatMessage { .. })).await
+    else {
+        unreachable!()
+    };
+    assert!(text.ends_with("[image]"));
+    let got = media.expect("capable clients get the picture");
+    let (bytes, mime) = a.client.download_media(&got.id).await.unwrap();
+    assert_eq!((bytes, mime.as_str()), (png.clone(), "image/png"));
+    // A client that didn't ask for pictures gets just the text.
+    let Event::ChatMessage { media, .. } =
+        next(&mut old.events, |e| matches!(e, Event::ChatMessage { .. })).await
+    else {
+        unreachable!()
+    };
+    assert!(media.is_none());
+    // Not a picture: refused.
+    assert!(b.client.upload_media(b"hello, this is not an image at all, really not").await.is_err());
+
+    // GIF icons: set, announced, fetched one at a time and as a list.
+    let gif = b"GIF89a\x01\x00\x01\x00tiny".to_vec();
+    b.client.set_gif_icon(&gif).await.unwrap();
+    let Event::GifIconChanged { user_id } =
+        next(&mut a.events, |e| matches!(e, Event::GifIconChanged { .. })).await
+    else {
+        unreachable!()
+    };
+    assert_eq!(user_id, b.client.info.user_id);
+    assert_eq!(a.client.gif_icon(user_id).await.unwrap(), Some(gif.clone()));
+    assert!(a.client.gif_icons().await.unwrap().contains(&(user_id, gif)));
+    assert_eq!(a.client.gif_icon(old.client.info.user_id).await.unwrap(), None);
+
+    // Chat history: the latest lines, then older ones page by page.
+    for i in 1..=5 {
+        b.client.send_chat(&format!("line {i}"), false);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let latest = a.client.chat_history(None, None, 2).await.unwrap();
+    let texts: Vec<_> = latest.entries.iter().map(|e| e.text.as_str()).collect();
+    assert_eq!(texts, ["line 4", "line 5"]);
+    assert!(latest.has_more);
+    let older = a.client.chat_history(Some(latest.entries[0].id), None, 50).await.unwrap();
+    assert_eq!(older.entries.first().map(|e| e.text.as_str()), Some("[image]"));
+    assert_eq!(older.entries.last().map(|e| e.text.as_str()), Some("line 3"));
+    assert!(!older.has_more);
+    assert_eq!(older.entries[0].nick, "PicB");
+    // Without asking for it, there's none.
+    assert!(old.client.chat_history(None, None, 5).await.is_err());
+}
+
+/// alice offers bob a file; returns both sessions, the offer as bob saw it, and the refs.
+async fn send_between(cfg: MockConfig, security: Security, data: &[u8]) -> (String, Vec<u8>) {
+    let s = server(cfg).await;
+    s.add_account("alice", "pw", "Alice");
+    s.add_account("bob", "pw", "Bob");
+    s.befriend("alice", "bob");
+    let mut a = hotline_im::connect(&opts(&s, "alice", security)).await.unwrap();
+    let mut b = hotline_im::connect(&opts(&s, "bob", security)).await.unwrap();
+    a.client.get_roster().await.unwrap();
+    b.client.get_roster().await.unwrap();
+
+    let guid = a.client.offer_file("bob", "../pics/cat photo.png", data.len() as u64).await.unwrap();
+    let Event::FileOffer { offer } = next(&mut b.events, |e| matches!(e, Event::FileOffer { .. })).await else { unreachable!() };
+    assert_eq!((offer.from.as_str(), offer.name.as_str(), offer.size, offer.guid.as_str()),
+               ("alice", "cat photo.png", data.len() as u64, guid.as_str()));
+    b.client.accept_file(&guid).await.unwrap();
+    let Event::FileReady { relay_ref: up, .. } = next(&mut a.events, |e| matches!(e, Event::FileReady { .. })).await else { unreachable!() };
+    let Event::FileReady { relay_ref: down, .. } = next(&mut b.events, |e| matches!(e, Event::FileReady { .. })).await else { unreachable!() };
+
+    let (ac, bc) = (a.client.clone(), b.client.clone());
+    let sent = data.to_vec();
+    let sender = tokio::spawn(async move {
+        ac.send_file(up, "cat photo.png", sent.len() as u64, &sent[..], |_, _| {}).await
+    });
+    let mut got = Vec::new();
+    let mut last = (0, 0);
+    let name = bc.receive_file(down, &mut got, |d, t| last = (d, t)).await.unwrap();
+    sender.await.unwrap().unwrap();
+    assert_eq!(last, (data.len() as u64, data.len() as u64));
+    (name, got)
+}
+
+#[tokio::test]
+async fn files_go_between_buddies_over_an_encrypted_session() {
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let (name, got) = send_between(MockConfig::default(), Security::HopeEncrypted, &data).await;
+    assert_eq!(name, "cat photo.png");
+    assert!(got == data, "the file arrived intact");
+}
+
+#[tokio::test]
+async fn files_go_between_buddies_in_the_clear() {
+    let cfg = MockConfig { hope: false, ..MockConfig::default() };
+    let data = b"just a little text file\n".repeat(100);
+    let (name, got) = send_between(cfg, Security::Plain, &data).await;
+    assert_eq!(name, "cat photo.png");
+    assert_eq!(got, data);
+}
+
+#[tokio::test]
+async fn a_declined_file_and_strangers() {
+    let s = server(MockConfig::default()).await;
+    s.add_account("alice", "pw", "Alice");
+    s.add_account("bob", "pw", "Bob");
+    s.add_account("eve", "pw", "Eve");
+    s.befriend("alice", "bob");
+    let mut a = hotline_im::connect(&opts(&s, "alice", Security::Auto)).await.unwrap();
+    let mut b = hotline_im::connect(&opts(&s, "bob", Security::Auto)).await.unwrap();
+    let _e = hotline_im::connect(&opts(&s, "eve", Security::Auto)).await.unwrap();
+    a.client.get_roster().await.unwrap();
+    b.client.get_roster().await.unwrap();
+    assert!(a.client.offer_file("eve", "x.txt", 10).await.is_err(), "only buddies get files");
+    let guid = a.client.offer_file("bob", "x.txt", 10).await.unwrap();
+    next(&mut b.events, |e| matches!(e, Event::FileOffer { .. })).await;
+    b.client.decline_file(&guid).await.unwrap();
+    let Event::FileDeclined { guid: g, .. } = next(&mut a.events, |e| matches!(e, Event::FileDeclined { .. })).await else { unreachable!() };
+    assert_eq!(g, guid);
 }

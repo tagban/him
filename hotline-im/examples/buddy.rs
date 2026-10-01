@@ -23,6 +23,8 @@ async fn main() {
         icon: 0,
         security: Security::Auto,
         classic: false,
+        media: false,
+        history: false,
     };
     let mut s = connect(&opts).await.expect("sign on");
     println!("{login} signed on via {}", s.client.info.transport);

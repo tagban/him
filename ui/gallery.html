@@ -5,7 +5,8 @@
 <title>Buddy Icons</title>
 <link rel="stylesheet" href="aim.css">
 <style>
-  .grid { flex: 1; min-height: 0; overflow-y: auto; background: #fff; padding: 4px;
+  /* The icons were drawn for a light gray (BadassBuddy's #e6e6e6): transparent ones look wrong on white. */
+  .grid { flex: 1; min-height: 0; overflow-y: auto; background: #e9e9e9; padding: 4px;
     display: grid; grid-template-columns: repeat(auto-fill, 56px); grid-auto-rows: 56px; gap: 4px; justify-content: center; align-content: start; }
   .cell { display: grid; place-items: center; cursor: default; border: 1px solid transparent; }
   .cell img { width: 48px; height: 48px; }
@@ -14,6 +15,8 @@
   .top { display: flex; gap: 6px; align-items: center; }
   .top input { flex: 1; min-width: 0; }
   .count { color: #505050; white-space: nowrap; }
+  .credit { font-size: 11px; }
+  .credit a { color: #000080; }
   .chosen { color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
@@ -21,6 +24,7 @@
 <div class="window">
   <div class="titlebar"></div>
   <div class="body">
+    <div class="credit" id="credit" style="display:none">Icons courtesy of <a href="#" id="bb">BadassBuddy.com</a> ♥</div>
     <div class="top"><label for="q">Find:</label><input type="text" id="q" spellcheck="false" placeholder="Name"><span class="count" id="count"></span></div>
     <div class="pane grid" id="grid"></div>
     <div class="chosen" id="chosen">Click an icon, then Use This Icon (or double-click it).</div>
@@ -85,8 +89,14 @@
   $('#q').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 150); });
   $('#use').onclick = use;
   $('#close').onclick = () => thisWindow.close();
+  $('#bb').onclick = e => { e.preventDefault(); invoke('open_icon_site', { url: 'https://www.badassbuddy.com/' }); };
   (async () => {
-    try { all = await invoke('gallery_list'); render(); $('#q').focus(); }
+    try {
+      all = await invoke('gallery_list');
+      if (await invoke('gallery_is_builtin')) $('#credit').style.display = '';
+      render();
+      $('#q').focus();
+    }
     catch (e) { $('#err').textContent = String(e); }
   })();
 </script>

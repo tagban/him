@@ -176,9 +176,53 @@ pub async fn icon_from_url(app: AppHandle, url: String) -> Result<String, String
 
 struct Gallery {
     path: PathBuf,
-    archive: zip::ZipArchive<std::io::Cursor<Vec<u8>>>,
-    /// (index in the archive, title)
+    src: Source,
+    /// (index in the zip, or in `files`; title)
     items: Vec<(usize, String)>,
+    /// The collection that comes with HIM (BadassBuddy's, by permission).
+    builtin: bool,
+}
+
+enum Source {
+    Zip(zip::ZipArchive<std::io::Cursor<Vec<u8>>>),
+    /// A folder of pictures (the bundled collection).
+    Dir(Vec<PathBuf>),
+}
+
+/// The BadassBuddy collection bundled with HIM: icons/badassbuddy in the repo, used by
+/// permission (LICENSE-ICONS.txt), without the ones BadassBuddy marks NSFW.
+fn bundled_folder(app: &AppHandle) -> Option<PathBuf> {
+    let mut places = vec![];
+    if let Ok(r) = app.path().resource_dir() {
+        places.push(r.join("badassbuddy"));
+    }
+    // Debug runs (cargo run) read it straight from the repo.
+    if cfg!(debug_assertions) {
+        places.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../icons/badassbuddy"));
+    }
+    let found = places.iter().find(|d| d.join("index.json").exists()).cloned();
+    if found.is_none() {
+        log(app, &format!("BadassBuddy collection not found in {places:?}"));
+    }
+    found
+}
+
+/// A folder with an index.json (`[{"title", "filename"}]`) and its pictures.
+fn read_folder(path: &std::path::Path) -> Result<Gallery, String> {
+    let text = std::fs::read_to_string(path.join("index.json")).map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let mut files = Vec::new();
+    let mut items = Vec::new();
+    for v in list {
+        let (Some(t), Some(f)) = (v["title"].as_str(), v["filename"].as_str()) else { continue };
+        if f.contains('/') || f.contains("..") {
+            continue;
+        }
+        items.push((files.len(), t.to_string()));
+        files.push(path.join(f));
+    }
+    items.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    Ok(Gallery { path: path.to_path_buf(), src: Source::Dir(files), items, builtin: true })
 }
 
 static GALLERY: std::sync::LazyLock<Mutex<Option<Gallery>>> = std::sync::LazyLock::new(Default::default);
@@ -222,16 +266,21 @@ fn read_zip(path: &std::path::Path) -> Result<Gallery, String> {
         *name = title;
     }
     items.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
-    Ok(Gallery { path: path.to_path_buf(), archive, items })
+    Ok(Gallery { path: path.to_path_buf(), src: Source::Zip(archive), items, builtin: false })
 }
 
 fn gallery_bytes(g: &mut Gallery, i: usize) -> Result<Vec<u8>, String> {
     let idx = g.items.get(i).ok_or("No such icon.")?.0;
-    let mut f = g.archive.by_index(idx).map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    use std::io::Read;
-    f.read_to_end(&mut out).map_err(|e| e.to_string())?;
-    Ok(out)
+    match &mut g.src {
+        Source::Zip(archive) => {
+            let mut f = archive.by_index(idx).map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            use std::io::Read;
+            f.read_to_end(&mut out).map_err(|e| e.to_string())?;
+            Ok(out)
+        }
+        Source::Dir(files) => std::fs::read(files.get(idx).ok_or("No such icon.")?).map_err(|e| e.to_string()),
+    }
 }
 
 async fn open_zip(app: &AppHandle, path: &std::path::Path) -> Result<String, String> {
@@ -263,7 +312,31 @@ async fn open_zip(app: &AppHandle, path: &std::path::Path) -> Result<String, Str
     }
 }
 
-/// The gallery's icons as (number, title), opening the remembered zip if needed.
+/// Opens the collection that comes with HIM in the gallery.
+#[tauri::command]
+pub async fn gallery_builtin(app: AppHandle) -> Result<(), String> {
+    let dir = bundled_folder(&app).ok_or("The BadassBuddy collection isn't in this copy of HIM.")?;
+    let g = tauri::async_runtime::spawn_blocking(move || read_folder(&dir))
+        .await
+        .map_err(|e| e.to_string())??;
+    *GALLERY.lock().unwrap() = Some(g);
+    Ok(())
+}
+
+/// Closes whatever the gallery had open, so it opens your remembered zip next.
+#[tauri::command]
+pub fn gallery_forget() {
+    *GALLERY.lock().unwrap() = None;
+}
+
+/// Whether the gallery shows the bundled collection (which gets BadassBuddy's credit).
+#[tauri::command]
+pub fn gallery_is_builtin() -> bool {
+    GALLERY.lock().unwrap().as_ref().is_some_and(|g| g.builtin)
+}
+
+/// The gallery's icons as (number, title): the open one, else the remembered zip, else the
+/// collection that comes with HIM.
 #[tauri::command]
 pub async fn gallery_list(app: AppHandle) -> Result<Vec<(usize, String)>, String> {
     let loaded = GALLERY.lock().unwrap().is_some();
@@ -272,13 +345,17 @@ pub async fn gallery_list(app: AppHandle) -> Result<Vec<(usize, String)>, String
             let st = app.state::<Mutex<App>>();
             let a = st.lock().unwrap();
             a.settings.prefs.icon_gallery.clone()
+        };
+        match path {
+            Some(path) => {
+                let g = tauri::async_runtime::spawn_blocking(move || read_zip(std::path::Path::new(&path)))
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| format!("{e} (Was the zip moved? Choose it again.)"))?;
+                *GALLERY.lock().unwrap() = Some(g);
+            }
+            None => gallery_builtin(app.clone()).await?,
         }
-        .ok_or("Choose a zip of icons first.")?;
-        let g = tauri::async_runtime::spawn_blocking(move || read_zip(std::path::Path::new(&path)))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| format!("{e} (Was the zip moved? Choose it again.)"))?;
-        *GALLERY.lock().unwrap() = Some(g);
     }
     let g = GALLERY.lock().unwrap();
     Ok(g.as_ref()

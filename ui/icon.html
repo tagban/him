@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="aim.css">
 <style>
   .top { display: flex; gap: 12px; align-items: flex-start; }
-  .frame { width: 56px; height: 56px; flex: none; display: grid; place-items: center; background: #fff;
+  .frame { width: 56px; height: 56px; flex: none; display: grid; place-items: center; background: #e9e9e9;
     box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow), inset -2px -2px var(--light), inset 2px 2px var(--dark); }
   .frame img { width: 48px; height: 48px; image-rendering: pixelated; }
   .frame .none { color: #909090; font-size: 10px; text-align: center; }
@@ -24,11 +24,11 @@
         <div class="name" id="name"></div>
       </div>
     </div>
-    <div class="hint" style="font-size:10px">Looking for one? BadassBuddy keeps the classic AIM icons. Choose a downloaded icon or a whole .zip of them, or right-click one, Copy Image Address, and paste the link here:</div>
+    <div class="hint" style="font-size:10px">Pick one from the BadassBuddy collection that comes with HIM, choose a picture or a .zip of them, or paste a link to one here. Icons courtesy of <a href="#" id="bblink">BadassBuddy.com</a> ♥</div>
     <div class="row"><input type="text" id="url" placeholder="https://..." spellcheck="false"><button id="paste" style="min-width:74px">Use Link</button></div>
     <div class="error" id="err"></div>
     <div class="buttons">
-      <button id="browse">Browse BadassBuddy</button>
+      <button id="browse">BadassBuddy Icons...</button>
       <button id="gallery" style="display:none" title="The zip of icons you opened before">My Icons...</button>
       <span class="grow"></span>
       <button id="pick" class="default">Choose File...</button>
@@ -61,7 +61,8 @@
       if (await invoke('pick_icon') === 'gallery') invoke('open_dialog', { kind: 'gallery' });
     } catch (e) { $('#err').textContent = String(e); }
   };
-  $('#gallery').onclick = () => invoke('open_dialog', { kind: 'gallery' });
+  // Your own zip again (the BadassBuddy button switches the gallery to the bundled set).
+  $('#gallery').onclick = async () => { await invoke('gallery_forget').catch(() => {}); invoke('open_dialog', { kind: 'gallery' }); };
   $('#clear').onclick = () => { $('#err').textContent = ''; invoke('clear_icon').catch(e => ($('#err').textContent = String(e))); };
   $('#paste').onclick = async () => {
     $('#err').textContent = '';
@@ -71,7 +72,11 @@
     $('#paste').disabled = false;
   };
   $('#url').addEventListener('keydown', e => { if (e.key === 'Enter') $('#paste').click(); });
-  $('#browse').onclick = () => invoke('open_icon_site', { url: 'https://www.badassbuddy.com/' }).catch(e => ($('#err').textContent = String(e)));
+  $('#browse').onclick = async () => {
+    try { await invoke('gallery_builtin'); invoke('open_dialog', { kind: 'gallery' }); }
+    catch (e) { $('#err').textContent = String(e); }
+  };
+  $('#bblink').onclick = e => { e.preventDefault(); invoke('open_icon_site', { url: 'https://www.badassbuddy.com/' }); };
 </script>
 </body>
 </html>

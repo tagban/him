@@ -30,7 +30,12 @@ pub struct MockConfig {
     /// Buddy icons: the largest picture kept (None = not supported).
     pub max_icon_bytes: Option<u32>,
     pub max_icon_dimension: u32,
+    /// Pictures in classic chat (inline media), and GIF icons.
+    pub media: bool,
 }
+
+/// The test server's picture chunk size: small, so tests cross chunk boundaries.
+pub const MOCK_MEDIA_CHUNK: usize = 4096;
 
 impl Default for MockConfig {
     fn default() -> Self {
@@ -45,6 +50,7 @@ impl Default for MockConfig {
             allow_guest: true,
             max_icon_bytes: Some(16384),
             max_icon_dimension: 128,
+            media: true,
         }
     }
 }
@@ -73,6 +79,8 @@ struct Sess {
     name: String,
     icon: u16,
     flags: u16,
+    /// HOPE AEAD sessions: the base of their file-transfer keys.
+    ft_base: Option<[u8; 32]>,
 }
 
 impl Sess {
@@ -93,7 +101,21 @@ struct State {
     seen: HashSet<(Vec<u8>, String)>,
     /// Read receipts waiting for an offline sender.
     receipts: HashMap<String, Vec<Transaction>>,
+    /// Inline media: handle → (bytes, MIME); upload token → bytes so far.
+    media: HashMap<Vec<u8>, (Vec<u8>, String)>,
+    uploads: HashMap<Vec<u8>, Vec<u8>>,
+    /// GIF icons, by session.
+    gif_icons: HashMap<u64, Vec<u8>>,
+    /// Public chat, for chat history.
+    history: Vec<crate::history::HistoryEntry>,
+    /// File offers waiting for an answer: GUID → (sender session, sender, recipient).
+    offers: HashMap<Vec<u8>, (u64, String, String)>,
+    /// Relay references: ref → (GUID, uploader?, session).
+    relays: HashMap<u32, (Vec<u8>, bool, u64)>,
 }
+
+/// The first side of a relayed transfer to arrive, waiting for the other.
+type Waiting = Arc<Mutex<HashMap<Vec<u8>, (bool, crate::transfer::Transfer)>>>;
 
 #[derive(Clone)]
 pub struct MockServer {
@@ -125,7 +147,17 @@ fn fail(req: &Transaction, code: u16, text: &str) -> Transaction {
 
 impl MockServer {
     pub async fn start(cfg: MockConfig) -> std::io::Result<MockServer> {
-        let listener = TcpListener::bind(cfg.bind).await?;
+        // The transfer port is the one above: with a random port, find one whose neighbour is free.
+        let mut tries = 0;
+        let (listener, xfer) = loop {
+            let l = TcpListener::bind(cfg.bind).await?;
+            let a = l.local_addr()?;
+            match TcpListener::bind((a.ip(), a.port() + 1)).await {
+                Ok(x) => break (l, Some(x)),
+                Err(_) if cfg.bind.port() == 0 && tries < 50 => tries += 1,
+                Err(_) => break (l, None),
+            }
+        };
         let addr = listener.local_addr()?;
         let server = MockServer {
             addr,
@@ -172,7 +204,57 @@ impl MockServer {
                 });
             }
         });
+        // The file-transfer port, one above (a relay for user-to-user transfers).
+        if let Some(xfer) = xfer {
+            let srv = server.clone();
+            let waiting = Waiting::default();
+            tokio::spawn(async move {
+                while let Ok((s, _)) = xfer.accept().await {
+                    let (srv, waiting) = (srv.clone(), waiting.clone());
+                    tokio::spawn(async move { srv.relay(s, waiting).await });
+                }
+            });
+        }
         Ok(server)
+    }
+
+    /// One side of a relayed transfer: when both are here, pipe the sender to the receiver,
+    /// opening each side's frames with its own key and sealing with the other's.
+    async fn relay(&self, mut s: TcpStream, waiting: Waiting) {
+        let mut hs = [0u8; 16];
+        if s.read_exact(&mut hs).await.is_err() || &hs[..4] != b"HTXF" {
+            return;
+        }
+        let r = u32::from_be_bytes([hs[4], hs[5], hs[6], hs[7]]);
+        let Some((guid, uploader, sid)) = self.state.lock().unwrap().relays.remove(&r) else { return };
+        let base = self.state.lock().unwrap().sessions.get(&sid).and_then(|x| x.ft_base);
+        let seal = base.map(|b| {
+            let key = crate::transfer::TransferRoute::transfer_key(&b, r);
+            (Sealer::new(&key, DIR_SERVER_TO_CLIENT), Sealer::new(&key, DIR_CLIENT_TO_SERVER))
+        });
+        let me = crate::transfer::Transfer::new(Box::new(s), seal);
+        let other = {
+            let mut w = waiting.lock().unwrap();
+            match w.remove(&guid) {
+                Some(o) => o,
+                None => {
+                    w.insert(guid, (uploader, me));
+                    return;
+                }
+            }
+        };
+        let (mut up, mut down) = if uploader { (me, other.1) } else { (other.1, me) };
+        loop {
+            match up.next_piece().await {
+                Ok(p) if !p.is_empty() => {
+                    if down.write(&p).await.is_err() {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        down.finish().await;
     }
 
     pub fn add_account(&self, login: &str, password: &str, name: &str) {
@@ -241,6 +323,7 @@ impl MockServer {
                     name: name.into(),
                     icon: 0,
                     flags: 0,
+                    ft_base: None,
                 },
             );
         }
@@ -419,11 +502,13 @@ impl MockServer {
                 })
                 .map(|(l, a)| (l.clone(), a.password.clone()))
         };
+        let mut ft_base = None;
         if let Some((alg, key, true)) = &hope_ctx {
             if let Some((_, pw)) = &found {
                 let keys = hope::aead_keys(*alg, pw.as_bytes(), key).unwrap();
                 w.enable_aead(Sealer::new(&keys.encode, DIR_SERVER_TO_CLIENT));
                 r.enable_aead(Sealer::new(&keys.decode, DIR_CLIENT_TO_SERVER));
+                ft_base = Some(crate::transfer::TransferRoute::aead_base(&keys.encode, &keys.decode, key));
             }
         }
         let guest = hope_ctx.is_none() && login_field.is_empty() && self.cfg.allow_guest;
@@ -437,7 +522,11 @@ impl MockServer {
         };
         let next_uid = (self.state.lock().unwrap().next_sid + 1) as u32;
         let asked = req.uint(field::CAPABILITIES).unwrap_or(0) as u16;
-        let confirmed = asked & (cap::MESSAGING | cap::MESSENGER_SESSION | cap::TEXT_ENCODING);
+        let mut ours = cap::MESSAGING | cap::MESSENGER_SESSION | cap::TEXT_ENCODING;
+        if self.cfg.media {
+            ours |= cap::INLINE_MEDIA | cap::CHAT_HISTORY;
+        }
+        let confirmed = asked & ours;
         let mut lf = vec![
             Field::int(field::VERSION, 197),
             Field::new(field::SERVER_NAME, self.cfg.server_name.clone()),
@@ -445,6 +534,11 @@ impl MockServer {
             Field::u16(field::CAPABILITIES, confirmed),
             Field::u32(field::MAX_MESSAGE_BYTES, 4096),
         ];
+        if confirmed & cap::INLINE_MEDIA != 0 {
+            lf.push(Field::u32(field::MEDIA_MAX_BYTES, 256 * 1024));
+            lf.push(Field::u32(field::MEDIA_MAX_DIMENSION, 2048));
+            lf.push(Field::u32(field::MEDIA_CHUNK_SIZE, MOCK_MEDIA_CHUNK as u32));
+        }
         if let (Some(max), true) = (self.cfg.max_icon_bytes, confirmed & cap::MESSAGING != 0) {
             lf.push(Field::u32(field::MAX_ICON_BYTES, max));
             lf.push(Field::u32(field::MAX_ICON_DIMENSION, self.cfg.max_icon_dimension));
@@ -470,6 +564,7 @@ impl MockServer {
                         .unwrap_or_else(|| login.clone()),
                     icon: req.uint(field::USER_ICON_ID).unwrap_or(0) as u16,
                     flags: 0,
+                    ft_base,
                 },
             );
             sid
@@ -498,7 +593,11 @@ impl MockServer {
                 self.after_roster(&login, &tx_);
             }
         }
-        let gone = self.state.lock().unwrap().sessions.remove(&sid);
+        let gone = {
+            let mut st = self.state.lock().unwrap();
+            st.gif_icons.remove(&sid);
+            st.sessions.remove(&sid)
+        };
         if gone.is_some_and(|g| g.visible()) {
             let st = self.state.lock().unwrap();
             Self::to_visible(
@@ -711,11 +810,32 @@ impl MockServer {
                 } else {
                     format!("\r{:>13}:  {}", me_s.name, text)
                 };
-                Self::to_visible(
-                    st,
-                    None,
-                    &notify(tx::CHAT_MSG, vec![Field::new(field::DATA, line)]),
-                );
+                let plain = notify(tx::CHAT_MSG, vec![Field::new(field::DATA, line)]);
+                let id = st.history.len() as u64 + 1;
+                st.history.push(crate::history::HistoryEntry {
+                    id,
+                    timestamp: now() as i64,
+                    nick: me_s.name.clone(),
+                    text: text.clone(),
+                    icon: me_s.icon,
+                    emote: t.uint(field::CHAT_OPTIONS) == Some(1),
+                    server: false,
+                    deleted: false,
+                });
+                // A picture goes only to sessions that can show one (the rest get the text).
+                let pic = t
+                    .bytes(field::MEDIA_ID)
+                    .filter(|_| me_s.caps & cap::INLINE_MEDIA != 0)
+                    .and_then(|h| st.media.get(h).map(|(b, m)| (h.to_vec(), b.len(), m.clone())));
+                for s in st.sessions.values().filter(|s| s.visible()) {
+                    let mut out = plain.clone();
+                    if let (Some((h, n, m)), true) = (&pic, s.caps & cap::INLINE_MEDIA != 0) {
+                        out.fields.push(Field::new(field::MEDIA_ID, h.clone()));
+                        out.fields.push(Field::new(field::MEDIA_TYPE, m.clone()));
+                        out.fields.push(Field::u32(field::MEDIA_BYTES, *n as u32));
+                    }
+                    let _ = s.tx.send(out);
+                }
                 None
             }
             tx::SEND_INSTANT_MSG => {
@@ -738,6 +858,175 @@ impl MockServer {
                     None => Some(fail(t, 0, "That user isn't here.")),
                 }
             }
+            tx::FILE_OFFER => {
+                let me_login = st.sessions.get(&sid)?.login.clone();
+                if Self::rel_state(st, &me_login, &who) != Some(RosterState::Accepted) {
+                    return Some(fail(t, 0, "You can only send files to buddies."));
+                }
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                let mut f = vec![Field::new(field::FRIEND_LOGIN, me_login.clone())];
+                f.extend(t.fields.iter().filter(|x| x.id != field::FRIEND_LOGIN).cloned());
+                let offer = notify(tx::FILE_OFFER, f);
+                let mut any = false;
+                for x in st.sessions.values().filter(|x| x.login == who && x.caps & cap::MESSAGING != 0) {
+                    let _ = x.tx.send(offer.clone());
+                    any = true;
+                }
+                if !any {
+                    return Some(fail(t, 0, "They're offline: files can only go to someone who's on."));
+                }
+                st.offers.insert(guid, (sid, me_login, who.clone()));
+                ok(vec![])
+            }
+            tx::FILE_ACCEPT => {
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                let Some((from_sid, _, to)) = st.offers.remove(&guid) else {
+                    return Some(fail(t, 0, "That offer is gone."));
+                };
+                let (up, down) = (rand::random::<u32>() | 1, rand::random::<u32>() & !1);
+                st.relays.insert(up, (guid.clone(), true, from_sid));
+                st.relays.insert(down, (guid.clone(), false, sid));
+                if let Some(x) = st.sessions.get(&from_sid) {
+                    let _ = x.tx.send(notify(tx::FILE_ACCEPT, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid.clone()),
+                        Field::new(field::FRIEND_LOGIN, to.clone()),
+                    ]));
+                    let _ = x.tx.send(notify(tx::FILE_READY, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid.clone()),
+                        Field::new(field::FILE_RELAY_REF, up.to_be_bytes()),
+                    ]));
+                }
+                if let Some(x) = st.sessions.get(&sid) {
+                    let _ = x.tx.send(notify(tx::FILE_READY, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid),
+                        Field::new(field::FILE_RELAY_REF, down.to_be_bytes()),
+                    ]));
+                }
+                ok(vec![])
+            }
+            tx::FILE_DECLINE => {
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                if let Some((from_sid, from, to)) = st.offers.remove(&guid) {
+                    let me_login = st.sessions.get(&sid).map(|x| x.login.clone()).unwrap_or_default();
+                    let n = notify(tx::FILE_DECLINE, vec![Field::new(field::FILE_TRANSFER_GUID, guid)]);
+                    if me_login == to {
+                        if let Some(x) = st.sessions.get(&from_sid) {
+                            let _ = x.tx.send(n);
+                        }
+                    } else {
+                        for x in st.sessions.values().filter(|x| x.login == to) {
+                            let _ = x.tx.send(n.clone());
+                        }
+                    }
+                    let _ = from;
+                }
+                ok(vec![])
+            }
+            tx::GET_CHAT_HISTORY => {
+                let caps = st.sessions.get(&sid).map(|s| s.caps).unwrap_or(0);
+                if caps & cap::CHAT_HISTORY == 0 {
+                    return Some(fail(t, 0, "Chat history isn't on for you."));
+                }
+                let before = t.uint(field::HISTORY_BEFORE).unwrap_or(u64::MAX);
+                let after = t.uint(field::HISTORY_AFTER).unwrap_or(0);
+                let limit = t.uint(field::HISTORY_LIMIT).unwrap_or(50).clamp(1, 200) as usize;
+                let range: Vec<_> = st.history.iter().filter(|e| e.id < before && e.id > after).collect();
+                // Newest first unless catching up from `after`; replies are oldest-first either way.
+                let from_after = t.has(field::HISTORY_AFTER) && !t.has(field::HISTORY_BEFORE);
+                let page: Vec<_> = if from_after {
+                    range.iter().take(limit).collect()
+                } else {
+                    range.iter().skip(range.len().saturating_sub(limit)).collect()
+                };
+                let mut f: Vec<Field> = page
+                    .iter()
+                    .map(|e| Field::new(field::HISTORY_ENTRY, e.pack(crate::text::TextMode::Utf8)))
+                    .collect();
+                f.push(Field::new(field::HISTORY_HAS_MORE, [(range.len() > page.len()) as u8]));
+                ok(f)
+            }
+            tx::UPLOAD_MEDIA => {
+                if st.sessions.get(&sid).map(|s| s.caps & cap::INLINE_MEDIA) != Some(cap::INLINE_MEDIA) {
+                    return Some(fail(t, 0, "Media rejected"));
+                }
+                let part = t.bytes(field::MEDIA_PAYLOAD).unwrap_or_default().to_vec();
+                let fin = t.uint(field::MEDIA_PART_FINAL).unwrap_or(0) != 0;
+                let data = match t.bytes(field::MEDIA_UPLOAD_TOKEN) {
+                    Some(tok) => match st.uploads.get_mut(tok) {
+                        Some(sofar) => {
+                            sofar.extend_from_slice(&part);
+                            if !fin {
+                                return ok(vec![]);
+                            }
+                            st.uploads.remove(tok).unwrap()
+                        }
+                        None => return Some(fail(t, 0, "Media rejected")),
+                    },
+                    None if !fin => {
+                        let tok = crate::messaging::new_guid().to_vec();
+                        st.uploads.insert(tok.clone(), part);
+                        return ok(vec![Field::new(field::MEDIA_UPLOAD_TOKEN, tok)]);
+                    }
+                    None => part,
+                };
+                let mime = crate::media::mime_of(&data);
+                if !mime.starts_with("image/") {
+                    return Some(fail(t, 0, "Unsupported media"));
+                }
+                let h = crate::messaging::new_guid().to_vec();
+                let n = data.len();
+                st.media.insert(h.clone(), (data, mime.to_string()));
+                ok(vec![
+                    Field::new(field::MEDIA_ID, h),
+                    Field::new(field::MEDIA_TYPE, mime),
+                    Field::u32(field::MEDIA_BYTES, n as u32),
+                ])
+            }
+            tx::DOWNLOAD_MEDIA => {
+                let Some((data, mime)) = t.bytes(field::MEDIA_ID).and_then(|h| st.media.get(h)) else {
+                    return Some(fail(t, 0, "Media not found"));
+                };
+                let parts: Vec<&[u8]> = data.chunks(MOCK_MEDIA_CHUNK).collect();
+                let i = t.uint(field::MEDIA_PART_INDEX).unwrap_or(0) as usize;
+                let Some(part) = parts.get(i) else { return Some(fail(t, 0, "Media not found")) };
+                ok(vec![
+                    Field::new(field::MEDIA_PAYLOAD, part.to_vec()),
+                    Field::new(field::MEDIA_TYPE, mime.clone()),
+                    Field::u16(field::MEDIA_PART_COUNT, parts.len() as u16),
+                    Field::new(field::MEDIA_PART_FINAL, [(i + 1 == parts.len()) as u8]),
+                ])
+            }
+            tx::ICON_SET if self.cfg.media => {
+                let gif = t.bytes(field::GIF_ICON_DATA).unwrap_or_default().to_vec();
+                if !gif.is_empty() && !gif.starts_with(b"GIF8") {
+                    return Some(fail(t, 0, "Not a GIF."));
+                }
+                if gif.is_empty() {
+                    st.gif_icons.remove(&sid);
+                } else {
+                    st.gif_icons.insert(sid, gif);
+                }
+                Self::to_visible(st, None, &notify(tx::ICON_CHANGE, vec![Field::int(field::USER_ID, sid as u32)]));
+                ok(vec![])
+            }
+            tx::ICON_GET if self.cfg.media => {
+                let uid = t.uint(field::USER_ID).unwrap_or(0);
+                let mut f = vec![Field::int(field::USER_ID, uid as u32)];
+                if let Some(g) = st.gif_icons.get(&uid) {
+                    f.push(Field::new(field::GIF_ICON_DATA, g.clone()));
+                }
+                ok(f)
+            }
+            tx::ICON_GET_LIST if self.cfg.media => ok(st
+                .gif_icons
+                .iter()
+                .map(|(uid, g)| {
+                    let mut d = (*uid as u16).to_be_bytes().to_vec();
+                    d.extend((g.len() as u16).to_be_bytes());
+                    d.extend(g);
+                    Field::new(field::ICON_LIST_ENTRY, d)
+                })
+                .collect()),
             tx::GET_USER_NAME_LIST => {
                 let mut ids: Vec<_> = st
                     .sessions

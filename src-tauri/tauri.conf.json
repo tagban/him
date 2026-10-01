@@ -42,6 +42,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "../icons/badassbuddy/": "badassbuddy/"
+    },
     "macOS": {
       "minimumSystemVersion": "12.0"
     }

@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "HIMCore"
+ffi_module_name = "HIMCoreFFI"
+ffi_module_filename = "HIMCoreFFI"

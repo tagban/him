@@ -17,7 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 type AppState<'a> = State<'a, Mutex<App>>;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Line {
     pub guid: String,
@@ -28,6 +28,9 @@ pub struct Line {
     pub ts: u64,
     /// "sending", "sent", "queued", "delivered", "read", "failed", "unread" (incoming)
     pub state: String,
+    /// A file sent or offered on this line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<crate::files::FileInfo>,
 }
 
 pub struct Live {
@@ -259,6 +262,8 @@ pub async fn do_sign_on(app: &AppHandle, req: SignOnRequest) -> Result<(), Strin
         icon: 0,
         security: req.security,
         classic: false,
+        media: false,
+        history: false,
     };
 
     let _ = app.emit("signon-step", "Connecting...");
@@ -287,12 +292,14 @@ pub async fn do_sign_on(app: &AppHandle, req: SignOnRequest) -> Result<(), Strin
         }
         a.epoch += 1;
         let epoch = a.epoch;
+        // What was said before, kept on this computer.
+        let convos = crate::history::load(&crate::history::folder(&a, &account.key()));
         a.live = Some(Live {
             client: session.client.clone(),
             opts,
             account,
             roster: BTreeMap::new(),
-            convos: HashMap::new(),
+            convos,
             presence: Presence::Online,
             status: String::new(),
             auto_answered: HashSet::new(),
@@ -480,6 +487,7 @@ async fn pump(app: AppHandle, mut events: tokio::sync::mpsc::UnboundedReceiver<E
                     }
                 }
                 drop(a);
+                crate::history::save(&app, &login);
                 let _ = app.emit(
                     "ack",
                     serde_json::json!({ "login": login, "guid": guid, "state": state }),
@@ -514,7 +522,12 @@ async fn pump(app: AppHandle, mut events: tokio::sync::mpsc::UnboundedReceiver<E
             Event::ChatMessage { .. }
             | Event::UserChanged { .. }
             | Event::UserLeft { .. }
-            | Event::PrivateMessage { .. } => {}
+            | Event::PrivateMessage { .. }
+            | Event::GifIconChanged { .. } => {}
+            Event::FileOffer { offer } => crate::files::on_offer(&app, offer),
+            Event::FileAccepted { guid, .. } => crate::files::on_accepted(&app, &guid),
+            Event::FileDeclined { guid, .. } => crate::files::on_declined(&app, &guid),
+            Event::FileReady { guid, relay_ref } => crate::files::on_ready(&app, guid, relay_ref),
             Event::Disconnected { reason } => {
                 let reconnect = {
                     let mut a = st.lock().unwrap();
@@ -673,6 +686,7 @@ fn on_message(app: &AppHandle, m: hotline_im::IncomingMessage) {
             body: m.body.clone(),
             ts: if m.timestamp > 0 { m.timestamp } else { now() },
             state: "unread".into(),
+            file: None,
         };
         convo.push(line.clone());
         let _ = app.emit("im", serde_json::json!({ "login": m.from, "line": line }));
@@ -683,6 +697,7 @@ fn on_message(app: &AppHandle, m: hotline_im::IncomingMessage) {
         .then(|| l.status.clone());
         (auto, l.client.clone())
     };
+    crate::history::save(app, &m.from);
     windows::open_im_window(app, &m.from, false);
     if let Some(text) = auto {
         let app = app.clone();
@@ -729,6 +744,16 @@ pub struct StateView {
     max_message_bytes: u32,
     /// What buddies see us as, when it isn't just the screen name.
     my_name: Option<String>,
+    /// Optional buddies to start with, not yet added or hidden.
+    suggestions: Vec<Suggestion>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Suggestion {
+    login: String,
+    name: String,
+    about: String,
 }
 
 fn state_view(a: &mut App) -> StateView {
@@ -748,6 +773,7 @@ fn state_view(a: &mut App) -> StateView {
             groups: vec![],
             max_message_bytes: 4096,
             my_name: None,
+            suggestions: vec![],
         };
     };
     let key = l.account.key();
@@ -780,6 +806,20 @@ fn state_view(a: &mut App) -> StateView {
         groups: vec![],
         max_message_bytes: info.limits.max_message_bytes,
         my_name: l.my_name.clone(),
+        suggestions: if a.settings.suggestions_hidden.contains(&key) {
+            vec![]
+        } else {
+            crate::settings::SUGGESTED_BUDDIES
+                .iter()
+                .chain(crate::settings::SUGGESTED_FOR_TESTS)
+                .filter(|(host, login, _, _)| {
+                    host.eq_ignore_ascii_case(&l.account.host)
+                        && !login.eq_ignore_ascii_case(&l.account.login)
+                        && !l.roster.contains_key(*login)
+                })
+                .map(|(_, login, name, about)| Suggestion { login: login.to_string(), name: name.to_string(), about: about.to_string() })
+                .collect()
+        },
     };
     let groups = a.settings.groups_for(&key).clone();
     StateView { groups, ..view }
@@ -844,6 +884,8 @@ async fn send_line(
     body: &str,
     dir: &str,
 ) -> Result<Line, String> {
+    // Hotline clients can't show modern emoji: they go (and are kept) as plain text.
+    let body = &hotline_im::emoticons::to_faces(body);
     let guid = new_guid();
     let me = client_login(app);
     let mut line = Line {
@@ -853,6 +895,7 @@ async fn send_line(
         body: body.to_string(),
         ts: now(),
         state: "sending".into(),
+        file: None,
     };
     {
         let st = app.state::<Mutex<App>>();
@@ -865,6 +908,7 @@ async fn send_line(
         }
     }
     let _ = app.emit("im", serde_json::json!({ "login": to, "line": line }));
+    crate::history::save(app, to);
     // One retry with the same GUID covers a timeout; the server de-duplicates.
     let mut result = client.send_im(to, &guid, body).await;
     if matches!(result, Err(Error::Timeout)) {
@@ -892,6 +936,7 @@ async fn send_line(
             line.state = x.state.clone();
         }
     }
+    crate::history::save(app, to);
     let _ = app.emit(
         "ack",
         serde_json::json!({ "login": to, "guid": line.guid, "state": line.state, "error": error }),
@@ -937,6 +982,7 @@ pub fn mark_read(app: AppHandle, state: AppState, login: String) {
     }
     drop(a);
     if any {
+        crate::history::save(&app, &login);
         emit_state(&app);
     }
 }
@@ -959,7 +1005,7 @@ pub async fn set_away(
 ) -> Result<(), String> {
     let client = live_client(&state)?;
     let (p, text) = match &message {
-        Some(m) => (Presence::Away, m.clone()),
+        Some(m) => (Presence::Away, hotline_im::emoticons::to_faces(m)),
         None => (Presence::Online, String::new()),
     };
     client.set_presence(p, &text, None).await.map_err(err)?;
@@ -1091,13 +1137,28 @@ pub async fn set_display_name(app: AppHandle, state: AppState<'_>, name: String)
     let client = live_client(&state)?;
     let login = client_login(&app);
     let mut profile = client.get_info(&login).await.map_err(err)?.profile.unwrap_or_default();
-    let name = name.trim();
+    let name = hotline_im::emoticons::to_faces(name.trim());
+    let name = name.as_str();
     profile.nickname = (!name.is_empty()).then(|| name.to_string());
     client.set_info(&profile).await.map_err(err)?;
     // The server may fall back to another name when the nickname is cleared: ask it.
     load_my_name(&app, &client).await;
     emit_state(&app);
     Ok(())
+}
+
+/// "Not now" to the suggested buddies, for this account.
+#[tauri::command]
+pub fn hide_suggestions(app: AppHandle, state: AppState) {
+    {
+        let mut a = state.lock().unwrap();
+        let Some(key) = a.live.as_ref().map(|l| l.account.key()) else { return };
+        if !a.settings.suggestions_hidden.contains(&key) {
+            a.settings.suggestions_hidden.push(key);
+        }
+        a.save();
+    }
+    emit_state(&app);
 }
 
 #[tauri::command]

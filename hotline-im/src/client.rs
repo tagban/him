@@ -5,6 +5,8 @@ use crate::frame::{FrameReader, FrameWriter, Sealer, DIR_CLIENT_TO_SERVER, DIR_S
 use crate::hope::{self, MacAlg};
 use crate::icon;
 use crate::info::{self, Descriptor};
+use crate::media::{MediaLimits, MediaRef};
+use crate::transfer::{FileOffer, TransferRoute};
 use crate::messaging::*;
 use crate::text::TextMode;
 use crate::wire::{cap, decode_name_list, encode_name_list, field, invert, tx, Field, Transaction};
@@ -56,6 +58,12 @@ pub struct ConnectOptions {
     /// A classic Hotline session (chat rooms): no messaging bits, a 1.9 version.
     #[serde(default)]
     pub classic: bool,
+    /// Ask a classic session's server for pictures in chat (inline media).
+    #[serde(default)]
+    pub media: bool,
+    /// Ask a classic session's server for its record of public chat (chat history).
+    #[serde(default)]
+    pub history: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,6 +92,10 @@ pub struct LoginInfo {
     pub encrypted: bool,
     /// Raised during sign-on (address mismatch, downgrades); show once there is a window.
     pub warnings: Vec<String>,
+    /// Pictures in chat, when the server confirmed inline media.
+    pub media: Option<MediaLimits>,
+    /// The server keeps public chat and will hand it over (chat history).
+    pub chat_history: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -118,6 +130,8 @@ pub enum Event {
     ChatMessage {
         chat_id: Option<u32>,
         text: String,
+        /// A picture attached (inline media).
+        media: Option<MediaRef>,
     },
     /// Someone joined, or changed name or flags (301).
     UserChanged {
@@ -132,6 +146,30 @@ pub enum Event {
         from_id: u16,
         from_name: String,
         text: String,
+        media: Option<MediaRef>,
+    },
+    /// A buddy offers us a file (814); answer with `accept_file` or `decline_file`.
+    FileOffer {
+        offer: FileOffer,
+    },
+    /// They took our file (815): File Ready follows.
+    FileAccepted {
+        guid: String,
+        login: Option<String>,
+    },
+    /// They turned it down, or one side called it off (816).
+    FileDeclined {
+        guid: String,
+        reason: Option<u16>,
+    },
+    /// Go (817): meet on the transfer port with this reference.
+    FileReady {
+        guid: String,
+        relay_ref: u32,
+    },
+    /// Someone set or cleared their GIF icon (1864); fetch it with `gif_icon`.
+    GifIconChanged {
+        user_id: u16,
     },
     ServerMessage {
         text: String,
@@ -201,6 +239,8 @@ pub struct Client {
     stop: Arc<watch::Sender<bool>>,
     pub text: TextMode,
     pub info: Arc<LoginInfo>,
+    /// Where file transfers go, and their keys (never shown, never serialized).
+    pub(crate) route: Arc<TransferRoute>,
 }
 
 /// What a successful sign-on hands back.
@@ -260,6 +300,7 @@ pub async fn connect(opts: &ConnectOptions) -> Result<Session, Error> {
                     false,
                     "TLS",
                     warnings.clone(),
+                    Some(&name),
                 )
                 .await),
                 Err(e) => Err(e),
@@ -284,6 +325,7 @@ pub async fn connect(opts: &ConnectOptions) -> Result<Session, Error> {
                             true,
                             "",
                             warnings.clone(),
+                            None,
                         )
                         .await
                         {
@@ -301,7 +343,7 @@ pub async fn connect(opts: &ConnectOptions) -> Result<Session, Error> {
         }
         Plan::Hope { encrypt } => {
             let (stream, peer) = open(&opts.host, data_port, None).await?;
-            match sign_on(stream, peer, data_port, opts, false, encrypt, "", warnings.clone()).await {
+            match sign_on(stream, peer, data_port, opts, false, encrypt, "", warnings.clone(), None).await {
                 Err(Error::Security(s)) if s == HOPE_UNSUPPORTED && opts.security == Security::Auto => {
                     // A server without HOPE: fall back to the legacy login, and say so.
                     warnings.push("This server doesn't support secure sign-on, so your password was sent the old Hotline way (obfuscated, not encrypted).".into());
@@ -441,7 +483,9 @@ impl Io {
 
 fn login_fields(opts: &ConnectOptions, text: TextMode) -> Vec<Field> {
     let (version, caps) = if opts.classic {
-        (CLASSIC_VERSION, cap::TEXT_ENCODING)
+        let media = if opts.media { cap::INLINE_MEDIA } else { 0 };
+        let history = if opts.history { cap::CHAT_HISTORY } else { 0 };
+        (CLASSIC_VERSION, cap::TEXT_ENCODING | media | history)
     } else {
         (CLIENT_VERSION, OUR_CAPS)
     };
@@ -467,6 +511,7 @@ async fn sign_on(
     encrypt: bool,
     label: &str,
     mut warnings: Vec<String>,
+    tls_name: Option<&str>,
 ) -> Result<Session, Error> {
     let mut io = Io::new(stream);
     // Our own strings go out as UTF-8 before negotiation: logins should be ASCII.
@@ -566,10 +611,17 @@ async fn sign_on(
     t.id = io.next_id;
     io.next_id += 1;
     io.w.write(&t).await?;
+    // Transfers go to the port after the one we signed on to, protected like this session.
+    let mut route = TransferRoute {
+        addr: Some(SocketAddr::new(peer.ip(), peer.port().wrapping_add(1))),
+        tls_name: in_tls.then(|| tls_name.unwrap_or(&opts.host).to_string()),
+        aead_base: None,
+    };
     if aead {
         let keys = hope::aead_keys(alg, pw, &session_key).expect("AEAD needs a real MAC");
         io.w.enable_aead(Sealer::new(&keys.decode, DIR_CLIENT_TO_SERVER));
         io.r.enable_aead(Sealer::new(&keys.encode, DIR_SERVER_TO_CLIENT));
+        route.aead_base = Some(TransferRoute::aead_base(&keys.encode, &keys.decode, &session_key));
     }
     let reply = if aead {
         let (first, plain) = tokio::time::timeout(REQUEST_TIMEOUT, io.r.read_first_sealed())
@@ -578,7 +630,7 @@ async fn sign_on(
             .map_err(|_| Error::LoginFailed("Incorrect login.".into()))?;
         if plain {
             // Refused before encryption started.
-            return finish(io, first, String::new(), false, warnings);
+            return finish(io, first, String::new(), false, warnings, TransferRoute::default());
         }
         if first.is_reply && first.id == t.id {
             first
@@ -602,12 +654,12 @@ async fn sign_on(
         format!("HOPE ({} sign-in only)", alg.name())
     };
     let encrypted = in_tls || aead;
-    finish(io, reply, transport, encrypted, warnings)
+    finish(io, reply, transport, encrypted, warnings, route)
 }
 
 async fn sign_on_plain(
     stream: BoxStream,
-    _peer: SocketAddr,
+    peer: SocketAddr,
     opts: &ConnectOptions,
     warnings: Vec<String>,
 ) -> Result<Session, Error> {
@@ -619,7 +671,8 @@ async fn sign_on_plain(
     ];
     fields.extend(login_fields(opts, pre));
     let reply = io.call(Transaction::request(tx::LOGIN, fields)).await?;
-    finish(io, reply, "Plaintext".into(), false, warnings)
+    let route = TransferRoute { addr: Some(SocketAddr::new(peer.ip(), peer.port().wrapping_add(1))), ..Default::default() };
+    finish(io, reply, "Plaintext".into(), false, warnings, route)
 }
 
 fn finish(
@@ -628,6 +681,7 @@ fn finish(
     transport: String,
     encrypted: bool,
     warnings: Vec<String>,
+    route: TransferRoute,
 ) -> Result<Session, Error> {
     if reply.error != 0 {
         let text = reply
@@ -671,11 +725,13 @@ fn finish(
         transport,
         encrypted,
         warnings,
+        media: (caps & cap::INLINE_MEDIA != 0).then(|| MediaLimits::parse(&reply)),
+        chat_history: caps & cap::CHAT_HISTORY != 0,
     };
-    Ok(start(io, text, info))
+    Ok(start(io, text, info, route))
 }
 
-fn start(io: Io, text: TextMode, info: LoginInfo) -> Session {
+fn start(io: Io, text: TextMode, info: LoginInfo, route: TransferRoute) -> Session {
     let Io {
         mut r,
         mut w,
@@ -708,6 +764,7 @@ fn start(io: Io, text: TextMode, info: LoginInfo) -> Session {
         stop: Arc::new(stop_tx),
         text,
         info: Arc::new(info),
+        route: Arc::new(route),
     };
 
     for t in early {
@@ -823,6 +880,7 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
                 from_id: id as u16,
                 from_name: s(field::USER_NAME).unwrap_or_default(),
                 text: s(field::DATA).unwrap_or_default(),
+                media: MediaRef::parse(t),
             }],
             None => s(field::DATA)
                 .map(|text| Event::ServerMessage { text })
@@ -833,6 +891,7 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
             .map(|text| Event::ChatMessage {
                 chat_id: t.uint(field::CHAT_ID).map(|v| v as u32),
                 text,
+                media: MediaRef::parse(t),
             })
             .into_iter()
             .collect(),
@@ -851,6 +910,29 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
                 .filter(|b| !b.is_empty())
                 .map(hex),
         }],
+        tx::FILE_OFFER => FileOffer::parse(t, text)
+            .map(|offer| Event::FileOffer { offer })
+            .into_iter()
+            .collect(),
+        tx::FILE_ACCEPT => t
+            .bytes(field::FILE_TRANSFER_GUID)
+            .map(|g| Event::FileAccepted { guid: hex(g), login: s(field::FRIEND_LOGIN) })
+            .into_iter()
+            .collect(),
+        tx::FILE_DECLINE => t
+            .bytes(field::FILE_TRANSFER_GUID)
+            .map(|g| Event::FileDeclined { guid: hex(g), reason: t.uint(field::REASON_CODE).map(|v| v as u16) })
+            .into_iter()
+            .collect(),
+        tx::FILE_READY => match (t.bytes(field::FILE_TRANSFER_GUID), t.uint(field::FILE_RELAY_REF)) {
+            (Some(g), Some(r)) => vec![Event::FileReady { guid: hex(g), relay_ref: r as u32 }],
+            _ => vec![], // a direct-path candidate: not spoken here
+        },
+        tx::ICON_CHANGE => t
+            .uint(field::USER_ID)
+            .map(|id| Event::GifIconChanged { user_id: id as u16 })
+            .into_iter()
+            .collect(),
         _ => vec![], // unknown notifications are ignored (guide §5.2)
     };
     for x in e {

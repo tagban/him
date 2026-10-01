@@ -1,6 +1,8 @@
 // HIM, the Hotline Instant Messenger: the late-90s AIM experience on the Hotline IM network.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod files;
+mod history;
 mod icons;
 mod rooms;
 mod session;
@@ -62,6 +64,15 @@ fn dev_script(app: tauri::AppHandle) {
                 windows::open_dialog(app.clone(), kind.to_string(), arg).await;
             }
         }
+        if let Ok(im) = std::env::var("HIM_DEV_IM") {
+            let (to, text) = im.split_once(':').unwrap_or((&im, "hello"));
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            windows::open_im_window(&app, to, true);
+            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+            if let Err(e) = session::send_im(app.clone(), to.into(), text.into()).await {
+                eprintln!("dev IM failed: {e}");
+            }
+        }
         // HIM_DEV_EVAL="label|delay_ms|js;;label|delay_ms|js": run page code in a window.
         if let Ok(steps) = std::env::var("HIM_DEV_EVAL") {
             use tauri::Manager;
@@ -90,15 +101,6 @@ fn dev_script(app: tauri::AppHandle) {
                     }
                     None => eprintln!("dev eval: no window {label}"),
                 }
-            }
-        }
-        if let Ok(im) = std::env::var("HIM_DEV_IM") {
-            let (to, text) = im.split_once(':').unwrap_or((&im, "hello"));
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-            windows::open_im_window(&app, to, true);
-            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-            if let Err(e) = session::send_im(app.clone(), to.into(), text.into()).await {
-                eprintln!("dev IM failed: {e}");
             }
         }
     });
@@ -153,10 +155,16 @@ fn main() {
             session::set_profile,
             session::set_display_name,
             session::search_users,
+            session::hide_suggestions,
             session::add_group,
             session::rename_group,
             session::delete_group,
             session::move_buddy,
+            files::send_file,
+            files::accept_file,
+            files::decline_file,
+            files::open_file,
+            files::file_data,
             rooms::list_rooms,
             rooms::join_room,
             rooms::chat_only,
@@ -170,6 +178,9 @@ fn main() {
             icons::icon_data,
             icons::open_icon_site,
             icons::buddy_icon,
+            icons::gallery_builtin,
+            icons::gallery_is_builtin,
+            icons::gallery_forget,
             icons::open_signup,
             icons::log_ui,
             icons::gallery_list,

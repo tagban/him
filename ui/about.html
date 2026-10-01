@@ -24,6 +24,7 @@
         <p id="ver">Version</p>
         <p>An instant messenger for the Hotline network, in the spirit of the classic late-90s buddy list.</p>
         <p>Speaks fogWraith's Hotline Instant Messaging extension, with HOPE secure sign-on and encryption.</p>
+        <p>Buddy icons courtesy of <a href="#" id="bb">BadassBuddy.com</a> ♥ (used by permission; not covered by HIM's MIT license).</p>
       </div>
     </div>
     <div class="buttons"><button class="default" id="ok">OK</button></div>
@@ -34,6 +35,7 @@
   setupWindow({ title: 'About HIM', minimize: false });
   invoke('get_settings').then(s => $('#ver').textContent = `Version ${s.version}`);
   $('#ok').onclick = () => thisWindow.close();
+  $('#bb').onclick = e => { e.preventDefault(); invoke('open_icon_site', { url: 'https://www.badassbuddy.com/' }); };
   $('#ok').focus();
 </script>
 </body>

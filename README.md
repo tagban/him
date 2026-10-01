@@ -128,10 +128,12 @@ each event instead, so you can use the classic ones from an install you have.
 
 ### Buddy Icon
 
-**My HIM > Buddy Icon** takes a GIF (animated is fine), PNG or JPEG from a file, or
-from one pasted link (say, an icon you found on BadassBuddy). **Choose File** also
-opens a .zip: one picture is used as is, and a collection (BadassBuddy's download)
-opens as a searchable gallery, reachable again later under **My Icons...**. Pictures bigger than
+**My HIM > Buddy Icon** opens **BadassBuddy Icons...**: the BadassBuddy.com collection,
+which comes with HIM by permission (over 2,000 classic AIM icons, without the ones
+BadassBuddy marks NSFW), searchable by name. It also takes a GIF (animated is fine), PNG
+or JPEG from a file, or from one pasted link. **Choose File** also opens a .zip: one
+picture is used as is, and a collection opens as a searchable gallery, reachable again
+later under **My Icons...**. Pictures bigger than
 64 x 64 are scaled to 48 x 48 first. In an IM window your buddy's icon sits in the
 lower-left and yours in the lower-right, as in AIM; Buddy Info shows it too.
 

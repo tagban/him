@@ -408,9 +408,10 @@ public final class AppModel {
         guard !text.isEmpty, let s = session else { return }
         let c = conversation(login)
         let guid = newGuid()
-        // Emoji need UTF-8; on an older server they go as the faces classic clients show.
-        let wire = serverInfo?.utf8 == true ? text : emojiToFaces(text: text)
-        c.lines.append(Line(id: guid, direction: .outgoing, body: text, date: .now, status: .sending))
+        // Hotline clients can't show modern emoji, so they go as plain text (😀 → :D,
+        // 🦄 → :unicorn_face:) and are kept that way; this app shows them as emoji again.
+        let wire = emojiToFaces(text: text)
+        c.lines.append(Line(id: guid, direction: .outgoing, body: wire, date: .now, status: .sending))
         saved(c)
         s.typing(to: login, typing: false)
         typingSent[login] = nil
@@ -583,6 +584,7 @@ public final class AppModel {
     public func setPresence(_ p: Presence, status text: String = "") async {
         guard let s = session else { return }
         do {
+            let text = emojiToFaces(text: text)
             try await s.setPresence(presence: p, status: text, discoverable: nil)
             presence = p
             status = text
@@ -659,7 +661,7 @@ public final class AppModel {
             var p = try await s.getInfo(login: login).profile ?? Profile(
                 nickname: nil, firstName: nil, lastName: nil, email: nil, gender: 0,
                 birthYear: 0, birthMonth: 0, birthDay: 0, country: nil, postcode: nil, languages: [])
-            let n = name.trimmingCharacters(in: .whitespaces)
+            let n = emojiToFaces(text: name.trimmingCharacters(in: .whitespaces))
             p.nickname = n.isEmpty ? nil : n
             try await s.setInfo(profile: p)
         }

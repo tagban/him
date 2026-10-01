@@ -859,6 +859,8 @@ async fn send_line(
     body: &str,
     dir: &str,
 ) -> Result<Line, String> {
+    // Hotline clients can't show modern emoji: they go (and are kept) as plain text.
+    let body = &hotline_im::emoticons::to_faces(body);
     let guid = new_guid();
     let me = client_login(app);
     let mut line = Line {
@@ -978,7 +980,7 @@ pub async fn set_away(
 ) -> Result<(), String> {
     let client = live_client(&state)?;
     let (p, text) = match &message {
-        Some(m) => (Presence::Away, m.clone()),
+        Some(m) => (Presence::Away, hotline_im::emoticons::to_faces(m)),
         None => (Presence::Online, String::new()),
     };
     client.set_presence(p, &text, None).await.map_err(err)?;
@@ -1110,7 +1112,8 @@ pub async fn set_display_name(app: AppHandle, state: AppState<'_>, name: String)
     let client = live_client(&state)?;
     let login = client_login(&app);
     let mut profile = client.get_info(&login).await.map_err(err)?.profile.unwrap_or_default();
-    let name = name.trim();
+    let name = hotline_im::emoticons::to_faces(name.trim());
+    let name = name.as_str();
     profile.nickname = (!name.is_empty()).then(|| name.to_string());
     client.set_info(&profile).await.map_err(err)?;
     // The server may fall back to another name when the nickname is cleared: ask it.

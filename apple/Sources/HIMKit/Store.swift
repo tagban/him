@@ -10,6 +10,9 @@ public enum Defaults {
     /// Friendly names for servers HIM knows.
     public static let serverNames = ["hotline.vespernet.net": "VesperNet"]
 
+    /// Where "Report" goes: the project's issue tracker (App Review wants a way to report abuse).
+    public static let reportPage = "https://github.com/tagban/him/issues/new"
+
     public static func serverName(_ host: String) -> String {
         serverNames[host.lowercased()] ?? host
     }
@@ -93,6 +96,17 @@ struct Settings {
     }
 
     static var roomIconSet: Bool { d.integer(forKey: "roomIcon") != 0 }
+
+    /// People hidden in chat rooms, by server ("host:port" → names).
+    static func ignored(_ server: String) -> Set<String> {
+        Set((d.dictionary(forKey: "ignored")?[server] as? [String]) ?? [])
+    }
+
+    static func setIgnored(_ server: String, _ names: Set<String>) {
+        var all = d.dictionary(forKey: "ignored") ?? [:]
+        all[server] = Array(names).sorted()
+        d.set(all, forKey: "ignored")
+    }
 }
 
 extension UInt16 {

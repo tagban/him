@@ -236,6 +236,7 @@ struct AddBuddyView: View {
 struct BuddyInfoView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let login: String
     @State private var info: UserInfo?
     @State private var alias = ""
@@ -284,6 +285,16 @@ struct BuddyInfoView: View {
                         Button("Remove from Buddy List", role: .destructive) {
                             Task { await app.remove(login); dismiss() }
                         }
+                    }
+                    Section {
+                        Button("Report…") {
+                            var c = URLComponents(string: Defaults.reportPage)
+                            c?.queryItems = [URLQueryItem(name: "title", value: "Report: \(login)"),
+                                             URLQueryItem(name: "body", value: "Screen name: \(login)\n\nWhat happened:\n")]
+                            if let url = c?.url { openURL(url) }
+                        }
+                    } footer: {
+                        Text("Block stops their messages; Report tells the HIM project about abuse.")
                     }
                     Section {
                         Button("Clear Conversation History", role: .destructive) { app.clearHistory(login) }

@@ -598,7 +598,9 @@ pub fn room_send(rooms: RoomsState, id: String, text: String) -> Result<(), Stri
         .as_ref()
         .filter(|_| room.state == "in")
         .ok_or("You're not in the room right now.")?;
-    let text = text.trim_end();
+    // Hotline clients can't show modern emoji: they go as plain text (😀 → :D).
+    let text = hotline_im::emoticons::to_faces(text.trim_end());
+    let text = text.as_str();
     if text.trim().is_empty() {
         return Ok(());
     }

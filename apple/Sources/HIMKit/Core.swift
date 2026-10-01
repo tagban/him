@@ -52,6 +52,6 @@ extension Presence {
 extension Buddy {
     /// Alias, then the name they go by, then the screen name.
     public var shownName: String {
-        [nickname, displayName].compactMap { $0 }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? login
+        facesToEmoji(text: [nickname, displayName].compactMap { $0 }.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? login)
     }
 }

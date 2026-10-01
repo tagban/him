@@ -27,10 +27,11 @@ public struct RoomView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                         }
-                        ForEach(Array(room.lines.enumerated()), id: \.element.id) { i, line in
+                        let shown = room.shownLines
+                        ForEach(Array(shown.enumerated()), id: \.element.id) { i, line in
                             RoomLineView(room: room, line: line,
-                                         continued: i > 0 && room.lines[i - 1].kind == .chat && line.kind == .chat
-                                             && room.lines[i - 1].name == line.name)
+                                         continued: i > 0 && shown[i - 1].kind == .chat && line.kind == .chat
+                                             && shown[i - 1].name == line.name)
                         }
                         Color.clear.frame(height: 1).id("end")
                     }
@@ -257,6 +258,7 @@ private struct RoomPicture: View {
 
 private struct PeopleList: View {
     let room: Room
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         List {
@@ -269,6 +271,18 @@ private struct PeopleList: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if u.away { Image(systemName: "moon.fill").font(.caption2).foregroundStyle(.secondary) }
+                        if room.isIgnored(u.name) { Image(systemName: "eye.slash").font(.caption2).foregroundStyle(.secondary) }
+                    }
+                    .opacity(room.isIgnored(u.name) ? 0.5 : 1)
+                    .contextMenu {
+                        if room.isIgnored(u.name) {
+                            Button { room.setIgnored(u.name, false) } label: { Label("Show Their Messages", systemImage: "eye") }
+                        } else {
+                            Button { room.setIgnored(u.name, true) } label: { Label("Ignore", systemImage: "eye.slash") }
+                        }
+                        Button { if let url = room.reportURL(u.name) { openURL(url) } } label: {
+                            Label("Report…", systemImage: "exclamationmark.bubble")
+                        }
                     }
                 }
             }

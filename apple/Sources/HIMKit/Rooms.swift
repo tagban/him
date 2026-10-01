@@ -57,11 +57,38 @@ public final class Room: Identifiable {
         self.nick = nick
         self.icon = icon
         self.app = app
+        ignored = Settings.ignored("\(host):\(port)")
     }
 
     /// Everyone here, admins first, then by name.
     public var people: [ChatUser] {
         users.values.sorted { ($0.admin ? 0 : 1, $0.name.lowercased()) < ($1.admin ? 0 : 1, $1.name.lowercased()) }
+    }
+
+    /// People you've hidden here: their lines don't show. Kept per server.
+    public private(set) var ignored: Set<String> = []
+
+    public func isIgnored(_ name: String) -> Bool { ignored.contains(name) }
+
+    public func setIgnored(_ name: String, _ on: Bool) {
+        if on { ignored.insert(name) } else { ignored.remove(name) }
+        Settings.setIgnored("\(host):\(port)", ignored)
+    }
+
+    /// The lines to show (without anyone you've hidden).
+    public var shownLines: [RoomLine] {
+        ignored.isEmpty ? lines : lines.filter { !(($0.kind == .chat || $0.kind == .join || $0.kind == .leave) && ignored.contains($0.name)) }
+    }
+
+    /// A page to report someone: the issue tracker, with what happened filled in.
+    public func reportURL(_ name: String) -> URL? {
+        var c = URLComponents(string: Defaults.reportPage)
+        let recent = lines.filter { $0.name == name && $0.kind == .chat }.suffix(5).map { "> \($0.text)" }.joined(separator: "\n")
+        c?.queryItems = [
+            URLQueryItem(name: "title", value: "Report: \(name) in \(title)"),
+            URLQueryItem(name: "body", value: "Server: \(host):\(port)\nPerson: \(name)\n\nWhat happened:\n\n\nTheir recent lines:\n\(recent)"),
+        ]
+        return c?.url
     }
 
     /// Who said a chat line, by name.

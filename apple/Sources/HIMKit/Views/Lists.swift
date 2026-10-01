@@ -35,7 +35,7 @@ struct BuddyRow: View {
                     .fontWeight(.medium)
                     .foregroundStyle(buddy.presence == .offline ? .secondary : .primary)
                 if let s = buddy.statusText, !s.isEmpty, buddy.presence != .offline {
-                    Text(s).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(facesToEmoji(text: s)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 } else if buddy.state == .pendingOut {
                     Text("Waiting for them to accept").font(.caption).foregroundStyle(.secondary)
                 } else if buddy.state == .blocked {

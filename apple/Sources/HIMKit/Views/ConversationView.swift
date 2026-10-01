@@ -98,7 +98,7 @@ public struct ConversationView: View {
 
     private func subtitle(_ b: Buddy?) -> String {
         guard let b else { return "Not on your Buddy List" }
-        if let s = b.statusText, !s.isEmpty, b.presence != .offline { return "\(b.presence.label) · \(s)" }
+        if let s = b.statusText, !s.isEmpty, b.presence != .offline { return "\(b.presence.label) · \(facesToEmoji(text: s))" }
         return b.presence.label
     }
 

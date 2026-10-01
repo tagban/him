@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["hotline-im", "src-tauri"]
+members = ["hotline-im", "src-tauri", "him-ffi"]
 
 [profile.release]
 codegen-units = 1

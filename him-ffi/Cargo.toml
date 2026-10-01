@@ -1,0 +1,21 @@
+[package]
+name = "him-ffi"
+version = "0.1.0"
+license = "MIT"
+description = "hotline-im for Swift (the modern macOS/iOS app), through UniFFI"
+edition = "2021"
+publish = false
+
+[lib]
+name = "himffi"
+crate-type = ["staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+hotline-im = { path = "../hotline-im" }
+uniffi = { version = "0.32", features = ["cli"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+thiserror = "2"

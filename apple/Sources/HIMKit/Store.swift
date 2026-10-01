@@ -10,6 +10,33 @@ public enum Defaults {
     /// Friendly names for servers HIM knows.
     public static let serverNames = ["hotline.vespernet.net": "VesperNet"]
 
+    /// Buddies HIM suggests on a server (optional; people can hide them).
+    public struct Suggestion: Identifiable {
+        public let login: String
+        public let name: String
+        public let about: String
+        public var id: String { login }
+    }
+
+    public static let suggestions: [String: [Suggestion]] = [
+        "hotline.vespernet.net": [
+            Suggestion(login: "john", name: "John", about: "Made HIM. Say hi!"),
+            Suggestion(login: "smarterchild", name: "SmarterChild", about: "A chatbot: weather, news, trivia and more"),
+        ],
+        // Debug builds: the local test server (mock-server), to try it there.
+        "127.0.0.1": debugOnly([
+            Suggestion(login: "carol", name: "Carol", about: "A test buddy on the local server"),
+        ]),
+    ]
+
+    private static func debugOnly(_ s: [Suggestion]) -> [Suggestion] {
+        #if DEBUG
+        s
+        #else
+        []
+        #endif
+    }
+
     /// Where "Report" goes: the project's issue tracker (App Review wants a way to report abuse).
     public static let reportPage = "https://github.com/tagban/him/issues/new"
 
@@ -96,6 +123,12 @@ struct Settings {
     }
 
     static var roomIconSet: Bool { d.integer(forKey: "roomIcon") != 0 }
+
+    /// Accounts that chose "Not now" for the suggested buddies.
+    static var suggestionsHidden: Set<String> {
+        get { Set(d.stringArray(forKey: "suggestionsHidden") ?? []) }
+        set { d.set(Array(newValue), forKey: "suggestionsHidden") }
+    }
 
     /// People hidden in chat rooms, by server ("host:port" → names).
     static func ignored(_ server: String) -> Set<String> {

@@ -652,6 +652,22 @@ public final class AppModel {
         return (try? await s.search(query: q)) ?? []
     }
 
+    // ---------- suggested buddies ----------
+
+    /// Buddies HIM suggests here that you haven't added (and haven't hidden).
+    public var suggestions: [Defaults.Suggestion] {
+        guard let a = account, !Settings.suggestionsHidden.contains(a.key) else { return [] }
+        return (Defaults.suggestions[a.host.lowercased()] ?? []).filter {
+            $0.login.caseInsensitiveCompare(a.login) != .orderedSame && buddies[$0.login] == nil
+        }
+    }
+
+    public func hideSuggestions() {
+        guard let a = account else { return }
+        Settings.suggestionsHidden.insert(a.key)
+        account = a  // so views look again
+    }
+
     // ---------- me ----------
 
     /// Changes only the name buddies see; Set User Info replaces the whole profile, so the rest goes back as it was.

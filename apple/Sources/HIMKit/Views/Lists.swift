@@ -161,6 +161,46 @@ struct RequestsSection: View {
     }
 }
 
+/// Optional buddies to start with (on VesperNet: John, who made HIM, and SmarterChild).
+struct SuggestedSection: View {
+    @Environment(AppModel.self) private var app
+    @State private var adding: Set<String> = []
+
+    var body: some View {
+        let list = app.suggestions
+        if !list.isEmpty {
+            Section {
+                ForEach(list) { s in
+                    HStack(spacing: 10) {
+                        Avatar(name: s.name, hash: nil, size: 34)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(s.name).fontWeight(.medium)
+                            Text(s.about).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        Spacer(minLength: 4)
+                        Button(adding.contains(s.login) ? "Asked" : "Add") {
+                            adding.insert(s.login)
+                            Task { _ = await app.addBuddy(s.login, note: "Hi! I found you in HIM.") }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(adding.contains(s.login))
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                HStack {
+                    Text("Suggested")
+                    Spacer()
+                    Button("Not now") { app.hideSuggestions() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
+        }
+    }
+}
+
 /// Buddies, online first.
 struct BuddySections: View {
     @Environment(AppModel.self) private var app
@@ -174,6 +214,7 @@ struct BuddySections: View {
         let online = all.filter { $0.presence != .offline }
         let offline = all.filter { $0.presence == .offline }
         RequestsSection()
+        SuggestedSection()
         Section("Online · \(online.count)") {
             ForEach(online, id: \.login) { b in
                 TargetRow(.im(b.login)) { BuddyRow(buddy: b) }.contextMenu { BuddyMenu(login: b.login) }

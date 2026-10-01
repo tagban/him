@@ -17,6 +17,21 @@ pub const DEFAULT_PORT: u16 = 5500;
 /// has no sign-up transaction; accounts are made by the server's operators.
 pub const SIGNUP_PAGES: &[(&str, &str)] = &[("hotline.vespernet.net", "https://vespernet.net/register")];
 
+/// Buddies HIM suggests on a server, optional: (host, login, name, about).
+pub const SUGGESTED_BUDDIES: &[(&str, &str, &str, &str)] = &[
+    ("hotline.vespernet.net", "john", "John", "Made HIM. Say hi!"),
+    ("hotline.vespernet.net", "smarterchild", "SmarterChild", "A chatbot: weather, news, trivia"),
+];
+
+/// Debug builds also suggest on the local test server (mock-server), to try it there.
+#[cfg(debug_assertions)]
+pub const SUGGESTED_FOR_TESTS: &[(&str, &str, &str, &str)] = &[
+    ("127.0.0.1", "carol", "Carol", "A test buddy on the local server"),
+    ("127.0.0.1", "hotbot", "HotBot", "The test server's bot"),
+];
+#[cfg(not(debug_assertions))]
+pub const SUGGESTED_FOR_TESTS: &[(&str, &str, &str, &str)] = &[];
+
 pub fn signup_page(host: &str) -> Option<&'static str> {
     SIGNUP_PAGES
         .iter()
@@ -130,6 +145,8 @@ pub struct Settings {
     pub hidden_rooms: Vec<String>,
     /// The name used in chat rooms when not signed on to IM.
     pub chat_nick: Option<String>,
+    /// Accounts that said "Not now" to the suggested buddies.
+    pub suggestions_hidden: Vec<String>,
     /// Per account key: "local:server", our icon file's hash and the hash the server
     /// reported for what it stored when we last agreed (empty = none; they differ when
     /// the server re-encodes). Tells a local change (upload it) from one made elsewhere.
@@ -164,6 +181,7 @@ impl Default for Settings {
             recent_rooms: Vec::new(),
             hidden_rooms: Vec::new(),
             chat_nick: None,
+            suggestions_hidden: Vec::new(),
             icon_synced: HashMap::new(),
         }
     }

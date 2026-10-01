@@ -155,6 +155,7 @@ fn main() {
             session::set_profile,
             session::set_display_name,
             session::search_users,
+            session::hide_suggestions,
             session::add_group,
             session::rename_group,
             session::delete_group,

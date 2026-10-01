@@ -44,6 +44,12 @@
   .me .st { font-weight: normal; color: #505050; overflow: hidden; text-overflow: ellipsis; }
   .offline-note { color: var(--shadow); padding: 6px; text-align: center; }
   .conn { background: #ffffe1; }
+  .suggest { margin: 2px 2px 6px; padding: 4px 6px; background: #ffffe1; border: 1px solid #c0c0a0; font-size: 11px; }
+  .suggest .sh { display: flex; justify-content: space-between; margin-bottom: 3px; }
+  .suggest .sh a { color: #000080; }
+  .suggest .srow { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 0; }
+  .suggest .sa { color: #505050; }
+  .suggest button { min-width: 0; padding: 0 8px; height: 20px; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -178,6 +184,17 @@
     return `<div class="grp${isSel ? ' sel' : ''}" data-grp="${esc(name)}"><span class="tri">${shut ? ICON.triShut : ICON.triOpen}</span><span class="gn">${esc(name)}</span>${mode === 'online' ? ` <span style="font-weight:normal">(${on}/${total})</span>` : ''}</div>`;
   }
 
+  document.addEventListener('click', async e => {
+    if (e.target.id === 's-hide') { e.preventDefault(); invoke('hide_suggestions'); return; }
+    const login = e.target.dataset?.add;
+    if (!login) return;
+    e.target.disabled = true;
+    e.target.textContent = 'Asked';
+    try {
+      await invoke('add_buddy', { login, note: 'Hi! I found you in HIM.', group: S.groups[0]?.name || 'Buddies' });
+    } catch (err) { $('#status').textContent = String(err); e.target.disabled = false; e.target.textContent = 'Add'; }
+  });
+
   function render() {
     if (!S) return;
     // The name buddies see, so a leftover one is easy to spot (My HIM > Display Name).
@@ -192,6 +209,12 @@
     let html = '';
     if (!S.connected) html += `<div class="offline-note">${ICON.plug} Not connected</div>`;
     const groups = grouped();
+    // Optional buddies to start with: John (who made HIM) and SmarterChild.
+    if (tab === 'online' && S.suggestions?.length) {
+      html += `<div class="suggest"><div class="sh"><b>Suggested buddies</b><a href="#" id="s-hide">Not now</a></div>` +
+        S.suggestions.map(s => `<div class="srow"><span><b>${esc(s.name)}</b><br><span class="sa">${esc(s.about)}</span></span><button data-add="${esc(s.login)}">Add</button></div>`).join('') +
+        `</div>`;
+    }
     if (tab === 'online') {
       for (const g of groups) {
         const on = g.members.filter(isOn);

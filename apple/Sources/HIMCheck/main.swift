@@ -103,6 +103,14 @@ struct Check {
         check(await until { app.conversation("bob").lines.last { $0.file != nil }?.file?.state == .done }, "alice sees it sent")
         bob.signOff()
 
+        // ---- suggested buddies ----
+        let dave = AppModel()
+        await dave.signOn(login: "dave", password: "hotline", host: "127.0.0.1", port: port, savePassword: false, autoSignOn: false)
+        check(dave.suggestions.map(\.login) == ["carol"], "dave is offered Carol (\(dave.suggestions.map(\.login)))")
+        _ = await dave.addBuddy("carol", note: "hi")
+        check(await until { dave.suggestions.isEmpty }, "once asked, she's no longer suggested")
+        dave.signOff()
+
         // ---- chat rooms ----
         app.rooms.nick = "Alice"
         let room = app.rooms.join(host: "127.0.0.1", port: port, title: "Test")

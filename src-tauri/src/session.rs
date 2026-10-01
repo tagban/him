@@ -744,6 +744,16 @@ pub struct StateView {
     max_message_bytes: u32,
     /// What buddies see us as, when it isn't just the screen name.
     my_name: Option<String>,
+    /// Optional buddies to start with, not yet added or hidden.
+    suggestions: Vec<Suggestion>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Suggestion {
+    login: String,
+    name: String,
+    about: String,
 }
 
 fn state_view(a: &mut App) -> StateView {
@@ -763,6 +773,7 @@ fn state_view(a: &mut App) -> StateView {
             groups: vec![],
             max_message_bytes: 4096,
             my_name: None,
+            suggestions: vec![],
         };
     };
     let key = l.account.key();
@@ -795,6 +806,20 @@ fn state_view(a: &mut App) -> StateView {
         groups: vec![],
         max_message_bytes: info.limits.max_message_bytes,
         my_name: l.my_name.clone(),
+        suggestions: if a.settings.suggestions_hidden.contains(&key) {
+            vec![]
+        } else {
+            crate::settings::SUGGESTED_BUDDIES
+                .iter()
+                .chain(crate::settings::SUGGESTED_FOR_TESTS)
+                .filter(|(host, login, _, _)| {
+                    host.eq_ignore_ascii_case(&l.account.host)
+                        && !login.eq_ignore_ascii_case(&l.account.login)
+                        && !l.roster.contains_key(*login)
+                })
+                .map(|(_, login, name, about)| Suggestion { login: login.to_string(), name: name.to_string(), about: about.to_string() })
+                .collect()
+        },
     };
     let groups = a.settings.groups_for(&key).clone();
     StateView { groups, ..view }
@@ -1120,6 +1145,20 @@ pub async fn set_display_name(app: AppHandle, state: AppState<'_>, name: String)
     load_my_name(&app, &client).await;
     emit_state(&app);
     Ok(())
+}
+
+/// "Not now" to the suggested buddies, for this account.
+#[tauri::command]
+pub fn hide_suggestions(app: AppHandle, state: AppState) {
+    {
+        let mut a = state.lock().unwrap();
+        let Some(key) = a.live.as_ref().map(|l| l.account.key()) else { return };
+        if !a.settings.suggestions_hidden.contains(&key) {
+            a.settings.suggestions_hidden.push(key);
+        }
+        a.save();
+    }
+    emit_state(&app);
 }
 
 #[tauri::command]

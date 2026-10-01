@@ -1,0 +1,21 @@
+BadassBuddy Icon Artwork: License and Attribution
+
+The buddy icons bundled with HIM are the original artwork of BadassBuddy.com,
+Copyright (c) 2000-2026 BadassBuddy.com. All rights reserved.
+
+These icons are NOT covered by the project's MIT license. MIT applies to the
+HIM source code only, not to the icon artwork.
+
+The icons are included with permission under a non-exclusive, revocable license,
+on these terms:
+
+  1. Visible attribution to "BadassBuddy.com," with a working link to
+     https://www.badassbuddy.com, appears in the app and in this README.
+  2. The icons are used only as buddy icons within HIM. They may not be sold,
+     sub-licensed, or repackaged as a standalone icon set.
+  3. Commercial use of HIM, or any reuse of the icons outside HIM, requires
+     separate written permission.
+
+Permission may be revoked if these terms are not honored.
+
+Contact: support@badappsbuddy.com, https://www.badassbuddy.com

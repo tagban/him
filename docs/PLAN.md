@@ -28,7 +28,7 @@ Done and tested against the mock server (and, for the room list, the live tracke
   server implements the server side (Janus support is in progress). A built-in
   BadassBuddy gallery waits on the site owner's OK (docs/BADASSBUDDY.md).
 - Default server: VesperNet (hotline.vespernet.net:5500), changeable in Setup;
-  "Get a Screen Name" opens the server's sign-up page (vespernet.net/register).
+  "Get a Screen Name" opens the server's sign-up page (agora.vespernet.net/messenger).
 - Smileys: :-) ;-) :-( :-P :-D =-O :-* >:o 8-) :-$ :-! :-[ O:-) :-\ :'( :-X <3 drawn as
   AIM-style faces (HIM's own drawings) in IMs and chat rooms, with a picker; the text
   itself is sent unchanged, so other clients see the codes. Setup can turn it off.

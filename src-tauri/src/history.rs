@@ -34,6 +34,13 @@ pub fn load(dir: &PathBuf) -> HashMap<String, Vec<Line>> {
                 if l.state == "sending" {
                     l.state = "failed".into(); // HIM closed before it went
                 }
+                // An offer lives only as long as both sessions: one left over can't be taken now.
+                if let Some(f) = l.file.as_mut() {
+                    if matches!(f.state.as_str(), "offered" | "incoming" | "starting" | "moving") {
+                        f.state = "failed".into();
+                        f.error = Some("it ended when HIM signed off".into());
+                    }
+                }
                 l
             })
             .collect();

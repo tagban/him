@@ -41,9 +41,12 @@ No account? **Just browse chat rooms** lets you join public Hotline chats as a g
 
 ## Pictures and files
 
-- **To a buddy:** the **+** beside the message box (on a Mac, you can also drag a file in).
-  They choose **Accept** or **Decline**; both of you need to be online. Big photos are made
-  smaller first.
+- **To a buddy:** the **+** beside the message box, then **Send a Picture…** (from Photos)
+  or **Send a File…** (on a Mac, you can also drag a file in). They choose **Accept** or
+  **Decline**; both of you need to be online. Photos go as JPEGs every Hotline app can show,
+  big ones made smaller first, and without where they were taken.
+- **Seeing a picture:** once it arrives it shows in the conversation; tap or click it to see
+  it full size.
 - **Where they go:** files from buddies are saved in **Downloads/HIM** on a computer, and in
   the **HIM** folder of the **Files** app on iPhone and iPad.
 - **In chat rooms:** the picture button beside the message box, on servers that take pictures.

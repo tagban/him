@@ -34,6 +34,10 @@ fn now() -> u64 {
 
 /// Where files from buddies go: Downloads/HIM.
 pub fn received_folder(app: &AppHandle) -> PathBuf {
+    #[cfg(debug_assertions)]
+    if let Ok(d) = std::env::var("HIM_RECEIVED_DIR") {
+        return PathBuf::from(d); // test runs
+    }
     let dir = app
         .path()
         .download_dir()

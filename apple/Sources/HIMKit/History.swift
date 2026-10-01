@@ -28,6 +28,11 @@ final class IMHistory {
             let lines = saved.lines.map { l -> Line in
                 var l = l
                 if l.status == .sending { l.status = .failed("HIM closed before it was sent") }
+                // An offer lives only as long as both sessions: one left over can't be taken now.
+                switch l.file?.state {
+                case .offered, .incoming, .starting, .moving: l.file?.state = .failed("it ended when HIM signed off")
+                default: break
+                }
                 return l
             }
             return (saved.login, lines)

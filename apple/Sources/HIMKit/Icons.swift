@@ -11,10 +11,27 @@ public struct DecodedImage {
     public let delays: [Double]
     public var duration: Double { delays.reduce(0, +) }
     public var isAnimated: Bool { frames.count > 1 }
+    /// Stored sideways and turned upright here.
+    var turned = false
 
     public init?(data: Data) {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let n = min(CGImageSourceGetCount(src), 64)
+        // A photo from a phone is often stored sideways with an orientation tag: turn it upright,
+        // since a shrunk copy loses the tag.
+        if n == 1, let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+           let o = props[kCGImagePropertyOrientation] as? UInt32, o != 1,
+           let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
+           let upright = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+               kCGImageSourceCreateThumbnailFromImageAlways: true,
+               kCGImageSourceCreateThumbnailWithTransform: true,
+               kCGImageSourceThumbnailMaxPixelSize: max(w, h),
+           ] as CFDictionary) {
+            frames = [upright]
+            delays = [0.1]
+            turned = true
+            return
+        }
         var frames: [CGImage] = [], delays: [Double] = []
         for i in 0..<n {
             guard let img = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }

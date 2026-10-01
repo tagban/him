@@ -1,5 +1,6 @@
 import HIMCore
 import PhotosUI
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 #if os(macOS)
@@ -256,20 +257,25 @@ private struct Composer: View {
     private var empty: Bool { conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     @State private var pickingFile = false
+    @State private var pickingPhoto = false
     @State private var photo: PhotosPickerItem?
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            // The pickers hang off the composer, not the menu: one inside a menu goes away with
+            // it (on iPhone, "Send a Picture" opened Files instead of Photos).
             Menu {
-                Button { pickingFile = true } label: { Label("Send a File…", systemImage: "doc") }
                 #if os(iOS)
-                PhotosPicker(selection: $photo, matching: .images) { Label("Send a Picture…", systemImage: "photo") }
+                Button { pickingPhoto = true } label: { Label("Send a Picture…", systemImage: "photo") }
                 #endif
+                Button { pickingFile = true } label: { Label("Send a File…", systemImage: "doc") }
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 26))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.secondary)
+                    .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -277,21 +283,6 @@ private struct Composer: View {
             .fixedSize()
             .disabled(!app.isSignedOn)
             .help("Send a picture or file")
-            .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.item]) { result in
-                guard case .success(let url) = result else { return }
-                send(url)
-            }
-            .onChange(of: photo) {
-                guard let photo else { return }
-                Task {
-                    if let d = try? await photo.loadTransferable(type: Data.self) {
-                        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Picture-\(Int(Date().timeIntervalSince1970)).jpg")
-                        try? d.write(to: url)
-                        send(url)
-                    }
-                    self.photo = nil
-                }
-            }
             TextField("Message", text: $conversation.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
@@ -317,6 +308,32 @@ private struct Composer: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.bar)
+        .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.item]) { result in
+            guard case .success(let url) = result else { return }
+            send(url)
+        }
+        .photosPicker(isPresented: $pickingPhoto, selection: $photo, matching: .images)
+        .onChange(of: photo) {
+            guard let photo else { return }
+            Task {
+                // As the library has it (often HEIC); sendFile makes it a JPEG others can show.
+                if let d = try? await photo.loadTransferable(type: Data.self) {
+                    let stamp = DateFormatter()
+                    stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
+                    let url = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("Photo \(stamp.string(from: .now)).\(Shrink.fileExtension(d) ?? "heic")")
+                    do {
+                        try d.write(to: url)
+                        send(url)
+                    } catch {
+                        app.notice = "That picture couldn't be read."
+                    }
+                } else {
+                    app.notice = "That picture couldn't be loaded from your library."
+                }
+                self.photo = nil
+            }
+        }
     }
 
     private func send(_ url: URL) {
@@ -337,18 +354,30 @@ private struct FileCard: View {
     let line: Line
     let login: String
 
+    @State private var image: DecodedImage?
+    @State private var preview: URL?
+
     private var mine: Bool { line.direction == .outgoing }
 
     var body: some View {
         let f = line.file!
+        let url = f.state == .done ? f.localURL : nil
         HStack {
             if mine { Spacer(minLength: 48) }
             VStack(alignment: .leading, spacing: 8) {
-                if f.state == .done, f.isPicture, let path = f.path, let img = picture(path) {
-                    IconImage(image: img)
-                        .frame(maxWidth: 280, maxHeight: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .onTapGesture { open(path) }
+                if f.isPicture, let url {
+                    Group {
+                        if let image {
+                            IconImage(image: image).aspectRatio(contentMode: .fit)
+                        } else {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.fill.quaternary).frame(height: 160)
+                        }
+                    }
+                    .frame(maxWidth: 276, maxHeight: 276)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onTapGesture { preview = url }
+                    .task(id: url) { image = picture(url) }
                 }
                 HStack(spacing: 10) {
                     Image(systemName: f.isPicture ? "photo" : "doc.fill")
@@ -369,6 +398,7 @@ private struct FileCard: View {
             }
             .padding(12)
             .frame(width: 300, alignment: .leading)
+            .quickLookPreview($preview)
             .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             if !mine { Spacer(minLength: 48) }
         }
@@ -386,13 +416,13 @@ private struct FileCard: View {
         case .offered:
             Button("Cancel") { app.declineFile(f.guid) }.buttonStyle(.bordered).controlSize(.small)
         case .done where !mine:
-            if let path = f.path {
+            if let url = f.localURL {
                 HStack {
-                    Button("Open") { open(path) }
+                    Button("Open") { open(url) }
                     #if os(macOS)
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     #else
-                    ShareLink(item: URL(fileURLWithPath: path))
+                    ShareLink(item: url)
                     #endif
                 }
                 .buttonStyle(.bordered)
@@ -421,13 +451,16 @@ private struct FileCard: View {
         return false
     }
 
-    private func picture(_ path: String) -> DecodedImage? {
-        (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap(DecodedImage.init(data:))
+    private func picture(_ url: URL) -> DecodedImage? {
+        (try? Data(contentsOf: url)).flatMap(DecodedImage.init(data:))
     }
 
-    private func open(_ path: String) {
+    /// In its own app on a Mac; full screen on iPhone.
+    private func open(_ url: URL) {
         #if os(macOS)
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        NSWorkspace.shared.open(url)
+        #else
+        preview = url
         #endif
     }
 }

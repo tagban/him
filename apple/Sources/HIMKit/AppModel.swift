@@ -55,6 +55,19 @@ public struct SharedFile: Equatable, Codable {
     public var isPicture: Bool {
         ["png", "jpg", "jpeg", "gif", "heic", "webp", "bmp", "tiff"].contains((name as NSString).pathExtension.lowercased())
     }
+
+    /// Where the file is on this device now. An iPhone app's folders move when it's updated,
+    /// so a path saved earlier is looked for again by name in the folder it was in.
+    @MainActor public var localURL: URL? {
+        guard let path else { return nil }
+        let fm = FileManager.default
+        if fm.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
+        let parts = URL(fileURLWithPath: path).pathComponents.suffix(2)
+        let tries = [AppModel.receivedFolder.appendingPathComponent(parts.last ?? ""),
+                     dataFolder("outgoing").appendingPathComponent(parts.joined(separator: "/")),
+                     dataFolder("outgoing").appendingPathComponent(parts.last ?? "")]
+        return tries.first { fm.fileExists(atPath: $0.path) }
+    }
 }
 
 @MainActor @Observable
@@ -492,15 +505,21 @@ public final class AppModel {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         // A copy of our own, so the file stays readable however long they take to accept.
-        let outbox = dataFolder("outgoing")
+        // In a folder of its own, so it keeps its name (that's what a preview shows).
+        let outbox = dataFolder("outgoing").appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
         var name = url.lastPathComponent
-        var copy = outbox.appendingPathComponent(UUID().uuidString + "-" + name)
+        var copy = outbox.appendingPathComponent(name)
         do {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             if let small = Shrink.forIM(data) {
-                if Shrink.isJPEG(small), !["jpg", "jpeg"].contains(url.pathExtension.lowercased()) {
-                    name = url.deletingPathExtension().lastPathComponent + ".jpg"
-                    copy = outbox.appendingPathComponent(UUID().uuidString + "-" + name)
+                // The name says what it is now (a HEIC photo goes as JPEG, say), so the other
+                // side's app knows to show it.
+                let ext = Shrink.fileExtension(small) ?? "jpg"
+                let had = url.pathExtension.lowercased()
+                if had != ext, !(ext == "jpg" && had == "jpeg") {
+                    name = url.deletingPathExtension().lastPathComponent + "." + ext
+                    copy = outbox.appendingPathComponent(name)
                 }
                 try small.write(to: copy)
             } else {
@@ -519,7 +538,7 @@ public final class AppModel {
             saved(c)
             return nil
         } catch {
-            try? FileManager.default.removeItem(at: copy)
+            try? FileManager.default.removeItem(at: outbox)
             return describe(error)
         }
     }

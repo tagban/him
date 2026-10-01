@@ -17,6 +17,7 @@ async fn main() {
         icon: 0,
         security: Security::Auto,
         classic: true,
+        media: false,
     };
     let mut s = connect(&opts).await.expect("join");
     let c = s.client.clone();

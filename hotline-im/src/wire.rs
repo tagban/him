@@ -41,6 +41,16 @@ pub mod tx {
     /// when another of our own sessions changes the icon.
     pub const SET_BUDDY_ICON: u16 = 827;
     pub const GET_BUDDY_ICON: u16 = 828;
+
+    /// Inline media (Capabilities-Inline-Media.md): pictures in chat and private messages.
+    pub const UPLOAD_MEDIA: u16 = 750;
+    pub const DOWNLOAD_MEDIA: u16 = 751;
+
+    /// GIF icons (GIF-Icons.md): a custom picture beside the classic icon number.
+    pub const ICON_GET_LIST: u16 = 1861;
+    pub const ICON_SET: u16 = 1862;
+    pub const ICON_GET: u16 = 1863;
+    pub const ICON_CHANGE: u16 = 1864;
 }
 
 /// Field IDs (guide Appendix B).
@@ -61,6 +71,28 @@ pub mod field {
     pub const VERSION: u16 = 160;
     pub const SERVER_NAME: u16 = 162;
     pub const CAPABILITIES: u16 = 0x01F0;
+
+    pub const MEDIA_TYPE: u16 = 0x0201;
+    pub const MEDIA_ID: u16 = 0x0202;
+    pub const MEDIA_PAYLOAD: u16 = 0x0203;
+    pub const MEDIA_DECLARED_TYPE: u16 = 0x0204;
+    pub const MEDIA_WIDTH: u16 = 0x0205;
+    pub const MEDIA_HEIGHT: u16 = 0x0206;
+    pub const MEDIA_BYTES: u16 = 0x0207;
+    pub const MEDIA_UPLOAD_TOKEN: u16 = 0x0208;
+    pub const MEDIA_PART_INDEX: u16 = 0x0209;
+    pub const MEDIA_PART_COUNT: u16 = 0x020A;
+    pub const MEDIA_PART_FINAL: u16 = 0x020B;
+    pub const MEDIA_MAX_BYTES: u16 = 0x020C;
+    pub const MEDIA_MAX_DIMENSION: u16 = 0x020D;
+    pub const MEDIA_MAX_PIXELS: u16 = 0x020E;
+    pub const MEDIA_CHUNK_SIZE: u16 = 0x020F;
+    pub const MEDIA_MAX_FRAMES: u16 = 0x0210;
+    pub const MEDIA_MAX_DURATION_MS: u16 = 0x0211;
+    pub const MEDIA_ERROR_CODE: u16 = 0x0212;
+
+    pub const GIF_ICON_DATA: u16 = 0x0300;
+    pub const ICON_LIST_ENTRY: u16 = 0x0301;
 
     pub const HOPE_APP_ID: u16 = 0x0E01;
     pub const HOPE_APP_STRING: u16 = 0x0E02;
@@ -109,6 +141,7 @@ pub mod cap {
     pub const LARGE_FILES: u16 = 1 << 0;
     pub const TEXT_ENCODING: u16 = 1 << 1;
     pub const VOICE: u16 = 1 << 2;
+    pub const INLINE_MEDIA: u16 = 1 << 3;
     pub const MESSAGING: u16 = 1 << 6;
     pub const DIRECT_TRANSFER: u16 = 1 << 7;
     pub const MESSENGER_SESSION: u16 = 1 << 8;

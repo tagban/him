@@ -25,6 +25,7 @@ fn opts(s: &MockServer, login: &str, security: Security) -> ConnectOptions {
         icon: 0,
         security,
         classic: false,
+        media: false,
     }
 }
 
@@ -273,6 +274,7 @@ fn guest(s: &MockServer, nick: &str) -> ConnectOptions {
         icon: 0,
         security: Security::Auto,
         classic: true,
+        media: false,
     }
 }
 
@@ -308,7 +310,7 @@ async fn guests_chat_in_a_room_and_messengers_stay_hidden() {
     assert_eq!(names, vec!["RoomieA", "RoomieB"]);
 
     b.client.send_chat("hello room ✨", false);
-    let Event::ChatMessage { text, chat_id } =
+    let Event::ChatMessage { text, chat_id, .. } =
         next(&mut a.events, |e| matches!(e, Event::ChatMessage { .. })).await
     else {
         unreachable!()
@@ -508,4 +510,53 @@ async fn no_buddy_icons_without_the_limit() {
     let a = connect(&opts(&s, "alice", Security::Auto)).await.unwrap();
     assert!(!a.client.has_buddy_icons());
     assert!(a.client.set_buddy_icon(&gif(48, 48, 1)).await.is_err());
+}
+
+#[tokio::test]
+async fn pictures_and_gif_icons_in_a_room() {
+    let s = server(MockConfig::default()).await;
+    let with_media = |nick: &str| ConnectOptions { media: true, ..guest(&s, nick) };
+    let mut a = hotline_im::connect(&with_media("PicA")).await.unwrap();
+    let b = hotline_im::connect(&with_media("PicB")).await.unwrap();
+    let mut old = hotline_im::connect(&guest(&s, "OldC")).await.unwrap();
+    assert!(a.client.media_limits().is_some());
+    assert!(old.client.media_limits().is_none());
+
+    // A picture bigger than one chunk goes up in parts and comes back whole.
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend((0..10_000u32).map(|i| (i * 7) as u8));
+    let m = b.client.upload_media(&png).await.unwrap();
+    assert_eq!(m.mime, "image/png");
+    b.client.send_chat_media("[image]", &m);
+    let Event::ChatMessage { text, media, .. } =
+        next(&mut a.events, |e| matches!(e, Event::ChatMessage { .. })).await
+    else {
+        unreachable!()
+    };
+    assert!(text.ends_with("[image]"));
+    let got = media.expect("capable clients get the picture");
+    let (bytes, mime) = a.client.download_media(&got.id).await.unwrap();
+    assert_eq!((bytes, mime.as_str()), (png.clone(), "image/png"));
+    // A client that didn't ask for pictures gets just the text.
+    let Event::ChatMessage { media, .. } =
+        next(&mut old.events, |e| matches!(e, Event::ChatMessage { .. })).await
+    else {
+        unreachable!()
+    };
+    assert!(media.is_none());
+    // Not a picture: refused.
+    assert!(b.client.upload_media(b"hello, this is not an image at all, really not").await.is_err());
+
+    // GIF icons: set, announced, fetched one at a time and as a list.
+    let gif = b"GIF89a\x01\x00\x01\x00tiny".to_vec();
+    b.client.set_gif_icon(&gif).await.unwrap();
+    let Event::GifIconChanged { user_id } =
+        next(&mut a.events, |e| matches!(e, Event::GifIconChanged { .. })).await
+    else {
+        unreachable!()
+    };
+    assert_eq!(user_id, b.client.info.user_id);
+    assert_eq!(a.client.gif_icon(user_id).await.unwrap(), Some(gif.clone()));
+    assert!(a.client.gif_icons().await.unwrap().contains(&(user_id, gif)));
+    assert_eq!(a.client.gif_icon(old.client.info.user_id).await.unwrap(), None);
 }

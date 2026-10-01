@@ -30,7 +30,12 @@ pub struct MockConfig {
     /// Buddy icons: the largest picture kept (None = not supported).
     pub max_icon_bytes: Option<u32>,
     pub max_icon_dimension: u32,
+    /// Pictures in classic chat (inline media), and GIF icons.
+    pub media: bool,
 }
+
+/// The test server's picture chunk size: small, so tests cross chunk boundaries.
+pub const MOCK_MEDIA_CHUNK: usize = 4096;
 
 impl Default for MockConfig {
     fn default() -> Self {
@@ -45,6 +50,7 @@ impl Default for MockConfig {
             allow_guest: true,
             max_icon_bytes: Some(16384),
             max_icon_dimension: 128,
+            media: true,
         }
     }
 }
@@ -93,6 +99,11 @@ struct State {
     seen: HashSet<(Vec<u8>, String)>,
     /// Read receipts waiting for an offline sender.
     receipts: HashMap<String, Vec<Transaction>>,
+    /// Inline media: handle → (bytes, MIME); upload token → bytes so far.
+    media: HashMap<Vec<u8>, (Vec<u8>, String)>,
+    uploads: HashMap<Vec<u8>, Vec<u8>>,
+    /// GIF icons, by session.
+    gif_icons: HashMap<u64, Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -437,7 +448,11 @@ impl MockServer {
         };
         let next_uid = (self.state.lock().unwrap().next_sid + 1) as u32;
         let asked = req.uint(field::CAPABILITIES).unwrap_or(0) as u16;
-        let confirmed = asked & (cap::MESSAGING | cap::MESSENGER_SESSION | cap::TEXT_ENCODING);
+        let mut ours = cap::MESSAGING | cap::MESSENGER_SESSION | cap::TEXT_ENCODING;
+        if self.cfg.media {
+            ours |= cap::INLINE_MEDIA;
+        }
+        let confirmed = asked & ours;
         let mut lf = vec![
             Field::int(field::VERSION, 197),
             Field::new(field::SERVER_NAME, self.cfg.server_name.clone()),
@@ -445,6 +460,11 @@ impl MockServer {
             Field::u16(field::CAPABILITIES, confirmed),
             Field::u32(field::MAX_MESSAGE_BYTES, 4096),
         ];
+        if confirmed & cap::INLINE_MEDIA != 0 {
+            lf.push(Field::u32(field::MEDIA_MAX_BYTES, 256 * 1024));
+            lf.push(Field::u32(field::MEDIA_MAX_DIMENSION, 2048));
+            lf.push(Field::u32(field::MEDIA_CHUNK_SIZE, MOCK_MEDIA_CHUNK as u32));
+        }
         if let (Some(max), true) = (self.cfg.max_icon_bytes, confirmed & cap::MESSAGING != 0) {
             lf.push(Field::u32(field::MAX_ICON_BYTES, max));
             lf.push(Field::u32(field::MAX_ICON_DIMENSION, self.cfg.max_icon_dimension));
@@ -498,7 +518,11 @@ impl MockServer {
                 self.after_roster(&login, &tx_);
             }
         }
-        let gone = self.state.lock().unwrap().sessions.remove(&sid);
+        let gone = {
+            let mut st = self.state.lock().unwrap();
+            st.gif_icons.remove(&sid);
+            st.sessions.remove(&sid)
+        };
         if gone.is_some_and(|g| g.visible()) {
             let st = self.state.lock().unwrap();
             Self::to_visible(
@@ -711,11 +735,21 @@ impl MockServer {
                 } else {
                     format!("\r{:>13}:  {}", me_s.name, text)
                 };
-                Self::to_visible(
-                    st,
-                    None,
-                    &notify(tx::CHAT_MSG, vec![Field::new(field::DATA, line)]),
-                );
+                let plain = notify(tx::CHAT_MSG, vec![Field::new(field::DATA, line)]);
+                // A picture goes only to sessions that can show one (the rest get the text).
+                let pic = t
+                    .bytes(field::MEDIA_ID)
+                    .filter(|_| me_s.caps & cap::INLINE_MEDIA != 0)
+                    .and_then(|h| st.media.get(h).map(|(b, m)| (h.to_vec(), b.len(), m.clone())));
+                for s in st.sessions.values().filter(|s| s.visible()) {
+                    let mut out = plain.clone();
+                    if let (Some((h, n, m)), true) = (&pic, s.caps & cap::INLINE_MEDIA != 0) {
+                        out.fields.push(Field::new(field::MEDIA_ID, h.clone()));
+                        out.fields.push(Field::new(field::MEDIA_TYPE, m.clone()));
+                        out.fields.push(Field::u32(field::MEDIA_BYTES, *n as u32));
+                    }
+                    let _ = s.tx.send(out);
+                }
                 None
             }
             tx::SEND_INSTANT_MSG => {
@@ -738,6 +772,88 @@ impl MockServer {
                     None => Some(fail(t, 0, "That user isn't here.")),
                 }
             }
+            tx::UPLOAD_MEDIA => {
+                if st.sessions.get(&sid).map(|s| s.caps & cap::INLINE_MEDIA) != Some(cap::INLINE_MEDIA) {
+                    return Some(fail(t, 0, "Media rejected"));
+                }
+                let part = t.bytes(field::MEDIA_PAYLOAD).unwrap_or_default().to_vec();
+                let fin = t.uint(field::MEDIA_PART_FINAL).unwrap_or(0) != 0;
+                let data = match t.bytes(field::MEDIA_UPLOAD_TOKEN) {
+                    Some(tok) => match st.uploads.get_mut(tok) {
+                        Some(sofar) => {
+                            sofar.extend_from_slice(&part);
+                            if !fin {
+                                return ok(vec![]);
+                            }
+                            st.uploads.remove(tok).unwrap()
+                        }
+                        None => return Some(fail(t, 0, "Media rejected")),
+                    },
+                    None if !fin => {
+                        let tok = crate::messaging::new_guid().to_vec();
+                        st.uploads.insert(tok.clone(), part);
+                        return ok(vec![Field::new(field::MEDIA_UPLOAD_TOKEN, tok)]);
+                    }
+                    None => part,
+                };
+                let mime = crate::media::mime_of(&data);
+                if !mime.starts_with("image/") {
+                    return Some(fail(t, 0, "Unsupported media"));
+                }
+                let h = crate::messaging::new_guid().to_vec();
+                let n = data.len();
+                st.media.insert(h.clone(), (data, mime.to_string()));
+                ok(vec![
+                    Field::new(field::MEDIA_ID, h),
+                    Field::new(field::MEDIA_TYPE, mime),
+                    Field::u32(field::MEDIA_BYTES, n as u32),
+                ])
+            }
+            tx::DOWNLOAD_MEDIA => {
+                let Some((data, mime)) = t.bytes(field::MEDIA_ID).and_then(|h| st.media.get(h)) else {
+                    return Some(fail(t, 0, "Media not found"));
+                };
+                let parts: Vec<&[u8]> = data.chunks(MOCK_MEDIA_CHUNK).collect();
+                let i = t.uint(field::MEDIA_PART_INDEX).unwrap_or(0) as usize;
+                let Some(part) = parts.get(i) else { return Some(fail(t, 0, "Media not found")) };
+                ok(vec![
+                    Field::new(field::MEDIA_PAYLOAD, part.to_vec()),
+                    Field::new(field::MEDIA_TYPE, mime.clone()),
+                    Field::u16(field::MEDIA_PART_COUNT, parts.len() as u16),
+                    Field::new(field::MEDIA_PART_FINAL, [(i + 1 == parts.len()) as u8]),
+                ])
+            }
+            tx::ICON_SET if self.cfg.media => {
+                let gif = t.bytes(field::GIF_ICON_DATA).unwrap_or_default().to_vec();
+                if !gif.is_empty() && !gif.starts_with(b"GIF8") {
+                    return Some(fail(t, 0, "Not a GIF."));
+                }
+                if gif.is_empty() {
+                    st.gif_icons.remove(&sid);
+                } else {
+                    st.gif_icons.insert(sid, gif);
+                }
+                Self::to_visible(st, None, &notify(tx::ICON_CHANGE, vec![Field::int(field::USER_ID, sid as u32)]));
+                ok(vec![])
+            }
+            tx::ICON_GET if self.cfg.media => {
+                let uid = t.uint(field::USER_ID).unwrap_or(0);
+                let mut f = vec![Field::int(field::USER_ID, uid as u32)];
+                if let Some(g) = st.gif_icons.get(&uid) {
+                    f.push(Field::new(field::GIF_ICON_DATA, g.clone()));
+                }
+                ok(f)
+            }
+            tx::ICON_GET_LIST if self.cfg.media => ok(st
+                .gif_icons
+                .iter()
+                .map(|(uid, g)| {
+                    let mut d = (*uid as u16).to_be_bytes().to_vec();
+                    d.extend((g.len() as u16).to_be_bytes());
+                    d.extend(g);
+                    Field::new(field::ICON_LIST_ENTRY, d)
+                })
+                .collect()),
             tx::GET_USER_NAME_LIST => {
                 let mut ids: Vec<_> = st
                     .sessions

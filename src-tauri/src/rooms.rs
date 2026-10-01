@@ -263,6 +263,7 @@ async fn connect_room(app: AppHandle, id: String) {
                 icon: 0,
                 security: Security::Auto,
                 classic: true,
+                media: false,
             },
             room.epoch,
         )
@@ -373,6 +374,7 @@ async fn pump(
             Event::ChatMessage {
                 chat_id: None,
                 text,
+                ..
             } => update(&app, &id, epoch, |room| {
                 for raw in text.split(['\r', '\n']).filter(|l| !l.trim().is_empty()) {
                     let (kind, name, body) = parse_chat(raw);

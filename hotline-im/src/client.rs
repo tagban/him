@@ -5,6 +5,7 @@ use crate::frame::{FrameReader, FrameWriter, Sealer, DIR_CLIENT_TO_SERVER, DIR_S
 use crate::hope::{self, MacAlg};
 use crate::icon;
 use crate::info::{self, Descriptor};
+use crate::media::{MediaLimits, MediaRef};
 use crate::messaging::*;
 use crate::text::TextMode;
 use crate::wire::{cap, decode_name_list, encode_name_list, field, invert, tx, Field, Transaction};
@@ -56,6 +57,9 @@ pub struct ConnectOptions {
     /// A classic Hotline session (chat rooms): no messaging bits, a 1.9 version.
     #[serde(default)]
     pub classic: bool,
+    /// Ask a classic session's server for pictures in chat (inline media).
+    #[serde(default)]
+    pub media: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -84,6 +88,8 @@ pub struct LoginInfo {
     pub encrypted: bool,
     /// Raised during sign-on (address mismatch, downgrades); show once there is a window.
     pub warnings: Vec<String>,
+    /// Pictures in chat, when the server confirmed inline media.
+    pub media: Option<MediaLimits>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -118,6 +124,8 @@ pub enum Event {
     ChatMessage {
         chat_id: Option<u32>,
         text: String,
+        /// A picture attached (inline media).
+        media: Option<MediaRef>,
     },
     /// Someone joined, or changed name or flags (301).
     UserChanged {
@@ -132,6 +140,11 @@ pub enum Event {
         from_id: u16,
         from_name: String,
         text: String,
+        media: Option<MediaRef>,
+    },
+    /// Someone set or cleared their GIF icon (1864); fetch it with `gif_icon`.
+    GifIconChanged {
+        user_id: u16,
     },
     ServerMessage {
         text: String,
@@ -441,7 +454,8 @@ impl Io {
 
 fn login_fields(opts: &ConnectOptions, text: TextMode) -> Vec<Field> {
     let (version, caps) = if opts.classic {
-        (CLASSIC_VERSION, cap::TEXT_ENCODING)
+        let media = if opts.media { cap::INLINE_MEDIA } else { 0 };
+        (CLASSIC_VERSION, cap::TEXT_ENCODING | media)
     } else {
         (CLIENT_VERSION, OUR_CAPS)
     };
@@ -671,6 +685,7 @@ fn finish(
         transport,
         encrypted,
         warnings,
+        media: (caps & cap::INLINE_MEDIA != 0).then(|| MediaLimits::parse(&reply)),
     };
     Ok(start(io, text, info))
 }
@@ -823,6 +838,7 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
                 from_id: id as u16,
                 from_name: s(field::USER_NAME).unwrap_or_default(),
                 text: s(field::DATA).unwrap_or_default(),
+                media: MediaRef::parse(t),
             }],
             None => s(field::DATA)
                 .map(|text| Event::ServerMessage { text })
@@ -833,6 +849,7 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
             .map(|text| Event::ChatMessage {
                 chat_id: t.uint(field::CHAT_ID).map(|v| v as u32),
                 text,
+                media: MediaRef::parse(t),
             })
             .into_iter()
             .collect(),
@@ -851,6 +868,11 @@ fn dispatch(t: &Transaction, text: TextMode, ev: &mpsc::UnboundedSender<Event>) 
                 .filter(|b| !b.is_empty())
                 .map(hex),
         }],
+        tx::ICON_CHANGE => t
+            .uint(field::USER_ID)
+            .map(|id| Event::GifIconChanged { user_id: id as u16 })
+            .into_iter()
+            .collect(),
         _ => vec![], // unknown notifications are ignored (guide §5.2)
     };
     for x in e {

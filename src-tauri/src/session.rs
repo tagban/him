@@ -259,6 +259,7 @@ pub async fn do_sign_on(app: &AppHandle, req: SignOnRequest) -> Result<(), Strin
         icon: 0,
         security: req.security,
         classic: false,
+        media: false,
     };
 
     let _ = app.emit("signon-step", "Connecting...");
@@ -514,7 +515,8 @@ async fn pump(app: AppHandle, mut events: tokio::sync::mpsc::UnboundedReceiver<E
             Event::ChatMessage { .. }
             | Event::UserChanged { .. }
             | Event::UserLeft { .. }
-            | Event::PrivateMessage { .. } => {}
+            | Event::PrivateMessage { .. }
+            | Event::GifIconChanged { .. } => {}
             Event::Disconnected { reason } => {
                 let reconnect = {
                     let mut a = st.lock().unwrap();

@@ -579,3 +579,72 @@ async fn pictures_and_gif_icons_in_a_room() {
     // Without asking for it, there's none.
     assert!(old.client.chat_history(None, None, 5).await.is_err());
 }
+
+/// alice offers bob a file; returns both sessions, the offer as bob saw it, and the refs.
+async fn send_between(cfg: MockConfig, security: Security, data: &[u8]) -> (String, Vec<u8>) {
+    let s = server(cfg).await;
+    s.add_account("alice", "pw", "Alice");
+    s.add_account("bob", "pw", "Bob");
+    s.befriend("alice", "bob");
+    let mut a = hotline_im::connect(&opts(&s, "alice", security)).await.unwrap();
+    let mut b = hotline_im::connect(&opts(&s, "bob", security)).await.unwrap();
+    a.client.get_roster().await.unwrap();
+    b.client.get_roster().await.unwrap();
+
+    let guid = a.client.offer_file("bob", "../pics/cat photo.png", data.len() as u64).await.unwrap();
+    let Event::FileOffer { offer } = next(&mut b.events, |e| matches!(e, Event::FileOffer { .. })).await else { unreachable!() };
+    assert_eq!((offer.from.as_str(), offer.name.as_str(), offer.size, offer.guid.as_str()),
+               ("alice", "cat photo.png", data.len() as u64, guid.as_str()));
+    b.client.accept_file(&guid).await.unwrap();
+    let Event::FileReady { relay_ref: up, .. } = next(&mut a.events, |e| matches!(e, Event::FileReady { .. })).await else { unreachable!() };
+    let Event::FileReady { relay_ref: down, .. } = next(&mut b.events, |e| matches!(e, Event::FileReady { .. })).await else { unreachable!() };
+
+    let (ac, bc) = (a.client.clone(), b.client.clone());
+    let sent = data.to_vec();
+    let sender = tokio::spawn(async move {
+        ac.send_file(up, "cat photo.png", sent.len() as u64, &sent[..], |_, _| {}).await
+    });
+    let mut got = Vec::new();
+    let mut last = (0, 0);
+    let name = bc.receive_file(down, &mut got, |d, t| last = (d, t)).await.unwrap();
+    sender.await.unwrap().unwrap();
+    assert_eq!(last, (data.len() as u64, data.len() as u64));
+    (name, got)
+}
+
+#[tokio::test]
+async fn files_go_between_buddies_over_an_encrypted_session() {
+    let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let (name, got) = send_between(MockConfig::default(), Security::HopeEncrypted, &data).await;
+    assert_eq!(name, "cat photo.png");
+    assert!(got == data, "the file arrived intact");
+}
+
+#[tokio::test]
+async fn files_go_between_buddies_in_the_clear() {
+    let cfg = MockConfig { hope: false, ..MockConfig::default() };
+    let data = b"just a little text file\n".repeat(100);
+    let (name, got) = send_between(cfg, Security::Plain, &data).await;
+    assert_eq!(name, "cat photo.png");
+    assert_eq!(got, data);
+}
+
+#[tokio::test]
+async fn a_declined_file_and_strangers() {
+    let s = server(MockConfig::default()).await;
+    s.add_account("alice", "pw", "Alice");
+    s.add_account("bob", "pw", "Bob");
+    s.add_account("eve", "pw", "Eve");
+    s.befriend("alice", "bob");
+    let mut a = hotline_im::connect(&opts(&s, "alice", Security::Auto)).await.unwrap();
+    let mut b = hotline_im::connect(&opts(&s, "bob", Security::Auto)).await.unwrap();
+    let _e = hotline_im::connect(&opts(&s, "eve", Security::Auto)).await.unwrap();
+    a.client.get_roster().await.unwrap();
+    b.client.get_roster().await.unwrap();
+    assert!(a.client.offer_file("eve", "x.txt", 10).await.is_err(), "only buddies get files");
+    let guid = a.client.offer_file("bob", "x.txt", 10).await.unwrap();
+    next(&mut b.events, |e| matches!(e, Event::FileOffer { .. })).await;
+    b.client.decline_file(&guid).await.unwrap();
+    let Event::FileDeclined { guid: g, .. } = next(&mut a.events, |e| matches!(e, Event::FileDeclined { .. })).await else { unreachable!() };
+    assert_eq!(g, guid);
+}

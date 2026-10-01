@@ -79,6 +79,8 @@ struct Sess {
     name: String,
     icon: u16,
     flags: u16,
+    /// HOPE AEAD sessions: the base of their file-transfer keys.
+    ft_base: Option<[u8; 32]>,
 }
 
 impl Sess {
@@ -106,7 +108,14 @@ struct State {
     gif_icons: HashMap<u64, Vec<u8>>,
     /// Public chat, for chat history.
     history: Vec<crate::history::HistoryEntry>,
+    /// File offers waiting for an answer: GUID → (sender session, sender, recipient).
+    offers: HashMap<Vec<u8>, (u64, String, String)>,
+    /// Relay references: ref → (GUID, uploader?, session).
+    relays: HashMap<u32, (Vec<u8>, bool, u64)>,
 }
+
+/// The first side of a relayed transfer to arrive, waiting for the other.
+type Waiting = Arc<Mutex<HashMap<Vec<u8>, (bool, crate::transfer::Transfer)>>>;
 
 #[derive(Clone)]
 pub struct MockServer {
@@ -138,7 +147,17 @@ fn fail(req: &Transaction, code: u16, text: &str) -> Transaction {
 
 impl MockServer {
     pub async fn start(cfg: MockConfig) -> std::io::Result<MockServer> {
-        let listener = TcpListener::bind(cfg.bind).await?;
+        // The transfer port is the one above: with a random port, find one whose neighbour is free.
+        let mut tries = 0;
+        let (listener, xfer) = loop {
+            let l = TcpListener::bind(cfg.bind).await?;
+            let a = l.local_addr()?;
+            match TcpListener::bind((a.ip(), a.port() + 1)).await {
+                Ok(x) => break (l, Some(x)),
+                Err(_) if cfg.bind.port() == 0 && tries < 50 => tries += 1,
+                Err(_) => break (l, None),
+            }
+        };
         let addr = listener.local_addr()?;
         let server = MockServer {
             addr,
@@ -185,7 +204,57 @@ impl MockServer {
                 });
             }
         });
+        // The file-transfer port, one above (a relay for user-to-user transfers).
+        if let Some(xfer) = xfer {
+            let srv = server.clone();
+            let waiting = Waiting::default();
+            tokio::spawn(async move {
+                while let Ok((s, _)) = xfer.accept().await {
+                    let (srv, waiting) = (srv.clone(), waiting.clone());
+                    tokio::spawn(async move { srv.relay(s, waiting).await });
+                }
+            });
+        }
         Ok(server)
+    }
+
+    /// One side of a relayed transfer: when both are here, pipe the sender to the receiver,
+    /// opening each side's frames with its own key and sealing with the other's.
+    async fn relay(&self, mut s: TcpStream, waiting: Waiting) {
+        let mut hs = [0u8; 16];
+        if s.read_exact(&mut hs).await.is_err() || &hs[..4] != b"HTXF" {
+            return;
+        }
+        let r = u32::from_be_bytes([hs[4], hs[5], hs[6], hs[7]]);
+        let Some((guid, uploader, sid)) = self.state.lock().unwrap().relays.remove(&r) else { return };
+        let base = self.state.lock().unwrap().sessions.get(&sid).and_then(|x| x.ft_base);
+        let seal = base.map(|b| {
+            let key = crate::transfer::TransferRoute::transfer_key(&b, r);
+            (Sealer::new(&key, DIR_SERVER_TO_CLIENT), Sealer::new(&key, DIR_CLIENT_TO_SERVER))
+        });
+        let me = crate::transfer::Transfer::new(Box::new(s), seal);
+        let other = {
+            let mut w = waiting.lock().unwrap();
+            match w.remove(&guid) {
+                Some(o) => o,
+                None => {
+                    w.insert(guid, (uploader, me));
+                    return;
+                }
+            }
+        };
+        let (mut up, mut down) = if uploader { (me, other.1) } else { (other.1, me) };
+        loop {
+            match up.next_piece().await {
+                Ok(p) if !p.is_empty() => {
+                    if down.write(&p).await.is_err() {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        down.finish().await;
     }
 
     pub fn add_account(&self, login: &str, password: &str, name: &str) {
@@ -254,6 +323,7 @@ impl MockServer {
                     name: name.into(),
                     icon: 0,
                     flags: 0,
+                    ft_base: None,
                 },
             );
         }
@@ -432,11 +502,13 @@ impl MockServer {
                 })
                 .map(|(l, a)| (l.clone(), a.password.clone()))
         };
+        let mut ft_base = None;
         if let Some((alg, key, true)) = &hope_ctx {
             if let Some((_, pw)) = &found {
                 let keys = hope::aead_keys(*alg, pw.as_bytes(), key).unwrap();
                 w.enable_aead(Sealer::new(&keys.encode, DIR_SERVER_TO_CLIENT));
                 r.enable_aead(Sealer::new(&keys.decode, DIR_CLIENT_TO_SERVER));
+                ft_base = Some(crate::transfer::TransferRoute::aead_base(&keys.encode, &keys.decode, key));
             }
         }
         let guest = hope_ctx.is_none() && login_field.is_empty() && self.cfg.allow_guest;
@@ -492,6 +564,7 @@ impl MockServer {
                         .unwrap_or_else(|| login.clone()),
                     icon: req.uint(field::USER_ICON_ID).unwrap_or(0) as u16,
                     flags: 0,
+                    ft_base,
                 },
             );
             sid
@@ -784,6 +857,70 @@ impl MockServer {
                     }
                     None => Some(fail(t, 0, "That user isn't here.")),
                 }
+            }
+            tx::FILE_OFFER => {
+                let me_login = st.sessions.get(&sid)?.login.clone();
+                if Self::rel_state(st, &me_login, &who) != Some(RosterState::Accepted) {
+                    return Some(fail(t, 0, "You can only send files to buddies."));
+                }
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                let mut f = vec![Field::new(field::FRIEND_LOGIN, me_login.clone())];
+                f.extend(t.fields.iter().filter(|x| x.id != field::FRIEND_LOGIN).cloned());
+                let offer = notify(tx::FILE_OFFER, f);
+                let mut any = false;
+                for x in st.sessions.values().filter(|x| x.login == who && x.caps & cap::MESSAGING != 0) {
+                    let _ = x.tx.send(offer.clone());
+                    any = true;
+                }
+                if !any {
+                    return Some(fail(t, 0, "They're offline: files can only go to someone who's on."));
+                }
+                st.offers.insert(guid, (sid, me_login, who.clone()));
+                ok(vec![])
+            }
+            tx::FILE_ACCEPT => {
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                let Some((from_sid, _, to)) = st.offers.remove(&guid) else {
+                    return Some(fail(t, 0, "That offer is gone."));
+                };
+                let (up, down) = (rand::random::<u32>() | 1, rand::random::<u32>() & !1);
+                st.relays.insert(up, (guid.clone(), true, from_sid));
+                st.relays.insert(down, (guid.clone(), false, sid));
+                if let Some(x) = st.sessions.get(&from_sid) {
+                    let _ = x.tx.send(notify(tx::FILE_ACCEPT, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid.clone()),
+                        Field::new(field::FRIEND_LOGIN, to.clone()),
+                    ]));
+                    let _ = x.tx.send(notify(tx::FILE_READY, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid.clone()),
+                        Field::new(field::FILE_RELAY_REF, up.to_be_bytes()),
+                    ]));
+                }
+                if let Some(x) = st.sessions.get(&sid) {
+                    let _ = x.tx.send(notify(tx::FILE_READY, vec![
+                        Field::new(field::FILE_TRANSFER_GUID, guid),
+                        Field::new(field::FILE_RELAY_REF, down.to_be_bytes()),
+                    ]));
+                }
+                ok(vec![])
+            }
+            tx::FILE_DECLINE => {
+                let guid = t.bytes(field::FILE_TRANSFER_GUID)?.to_vec();
+                if let Some((from_sid, from, to)) = st.offers.remove(&guid) {
+                    let me_login = st.sessions.get(&sid).map(|x| x.login.clone()).unwrap_or_default();
+                    let n = notify(tx::FILE_DECLINE, vec![Field::new(field::FILE_TRANSFER_GUID, guid)]);
+                    if me_login == to {
+                        if let Some(x) = st.sessions.get(&from_sid) {
+                            let _ = x.tx.send(n);
+                        }
+                    } else {
+                        for x in st.sessions.values().filter(|x| x.login == to) {
+                            let _ = x.tx.send(n.clone());
+                        }
+                    }
+                    let _ = from;
+                }
+                ok(vec![])
             }
             tx::GET_CHAT_HISTORY => {
                 let caps = st.sessions.get(&sid).map(|s| s.caps).unwrap_or(0);

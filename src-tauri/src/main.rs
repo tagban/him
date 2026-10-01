@@ -1,6 +1,7 @@
 // HIM, the Hotline Instant Messenger: the late-90s AIM experience on the Hotline IM network.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod files;
 mod history;
 mod icons;
 mod rooms;
@@ -158,6 +159,11 @@ fn main() {
             session::rename_group,
             session::delete_group,
             session::move_buddy,
+            files::send_file,
+            files::accept_file,
+            files::decline_file,
+            files::open_file,
+            files::file_data,
             rooms::list_rooms,
             rooms::join_room,
             rooms::chat_only,

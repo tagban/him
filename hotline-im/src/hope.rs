@@ -95,7 +95,7 @@ pub fn aead_keys(alg: MacAlg, password: &[u8], session_key: &[u8]) -> Option<Aea
     })
 }
 
-fn hkdf32(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
+pub(crate) fn hkdf32(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
     let mut out = [0u8; 32];
     Hkdf::<Sha256>::new(Some(salt), ikm)
         .expand(info, &mut out)

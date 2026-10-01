@@ -28,6 +28,9 @@ pub struct Line {
     pub ts: u64,
     /// "sending", "sent", "queued", "delivered", "read", "failed", "unread" (incoming)
     pub state: String,
+    /// A file sent or offered on this line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<crate::files::FileInfo>,
 }
 
 pub struct Live {
@@ -521,6 +524,10 @@ async fn pump(app: AppHandle, mut events: tokio::sync::mpsc::UnboundedReceiver<E
             | Event::UserLeft { .. }
             | Event::PrivateMessage { .. }
             | Event::GifIconChanged { .. } => {}
+            Event::FileOffer { offer } => crate::files::on_offer(&app, offer),
+            Event::FileAccepted { guid, .. } => crate::files::on_accepted(&app, &guid),
+            Event::FileDeclined { guid, .. } => crate::files::on_declined(&app, &guid),
+            Event::FileReady { guid, relay_ref } => crate::files::on_ready(&app, guid, relay_ref),
             Event::Disconnected { reason } => {
                 let reconnect = {
                     let mut a = st.lock().unwrap();
@@ -679,6 +686,7 @@ fn on_message(app: &AppHandle, m: hotline_im::IncomingMessage) {
             body: m.body.clone(),
             ts: if m.timestamp > 0 { m.timestamp } else { now() },
             state: "unread".into(),
+            file: None,
         };
         convo.push(line.clone());
         let _ = app.emit("im", serde_json::json!({ "login": m.from, "line": line }));
@@ -860,6 +868,7 @@ async fn send_line(
         body: body.to_string(),
         ts: now(),
         state: "sending".into(),
+        file: None,
     };
     {
         let st = app.state::<Mutex<App>>();

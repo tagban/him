@@ -42,6 +42,12 @@ pub mod tx {
     pub const SET_BUDDY_ICON: u16 = 827;
     pub const GET_BUDDY_ICON: u16 = 828;
 
+    /// User-to-user file transfer (guide §14): offer, accept, decline, ready.
+    pub const FILE_OFFER: u16 = 814;
+    pub const FILE_ACCEPT: u16 = 815;
+    pub const FILE_DECLINE: u16 = 816;
+    pub const FILE_READY: u16 = 817;
+
     /// Chat history (Capabilities-Chat-History.md): the server's record of public chat.
     pub const GET_CHAT_HISTORY: u16 = 700;
 
@@ -93,6 +99,14 @@ pub mod field {
     pub const MEDIA_MAX_FRAMES: u16 = 0x0210;
     pub const MEDIA_MAX_DURATION_MS: u16 = 0x0211;
     pub const MEDIA_ERROR_CODE: u16 = 0x0212;
+
+    pub const FILE_NAME: u16 = 201;
+    pub const FILE_TYPE_STRING: u16 = 205;
+    pub const FILE_CREATOR_STRING: u16 = 206;
+    pub const FILE_SIZE: u16 = 207;
+    pub const FILE_SIZE64: u16 = 0x01F1;
+    pub const FILE_TRANSFER_GUID: u16 = 0x060A;
+    pub const FILE_RELAY_REF: u16 = 0x060B;
 
     pub const CHANNEL_ID: u16 = 0x0F01;
     pub const HISTORY_BEFORE: u16 = 0x0F02;

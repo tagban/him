@@ -426,6 +426,14 @@ pub enum HimEvent {
     PrivateMessage { from_id: u16, from_name: String, text: String, media: Option<MediaRef> },
     /// Someone's GIF icon changed; fetch it with `gif_icon`.
     GifIconChanged { user_id: u16 },
+    /// A buddy offers us a file; answer with `accept_file` or `decline_file`.
+    FileOffer { from: String, guid: String, name: String, size: u64 },
+    /// They took our file; FileReady follows.
+    FileAccepted { guid: String },
+    /// Turned down, or called off.
+    FileDeclined { guid: String },
+    /// Go: `send_file` or `receive_file` with this reference.
+    FileReady { guid: String, relay_ref: u32 },
     ServerMessage { text: String },
     /// Another of our sessions changed our Buddy Icon; None = cleared.
     OwnIconChanged { hash: Option<String> },
@@ -466,11 +474,21 @@ impl From<CoreEvent> for HimEvent {
                 HimEvent::PrivateMessage { from_id, from_name, text, media: media.map(Into::into) }
             }
             CoreEvent::GifIconChanged { user_id } => HimEvent::GifIconChanged { user_id },
+            CoreEvent::FileOffer { offer } => HimEvent::FileOffer { from: offer.from, guid: offer.guid, name: offer.name, size: offer.size },
+            CoreEvent::FileAccepted { guid, .. } => HimEvent::FileAccepted { guid },
+            CoreEvent::FileDeclined { guid, .. } => HimEvent::FileDeclined { guid },
+            CoreEvent::FileReady { guid, relay_ref } => HimEvent::FileReady { guid, relay_ref },
             CoreEvent::ServerMessage { text } => HimEvent::ServerMessage { text },
             CoreEvent::OwnIconChanged { hash } => HimEvent::OwnIconChanged { hash },
             CoreEvent::Disconnected { reason } => HimEvent::Disconnected { reason },
         }
     }
+}
+
+/// How a transfer is going: called on a background thread now and then.
+#[uniffi::export(with_foreign)]
+pub trait TransferProgress: Send + Sync {
+    fn update(&self, done: u64, total: u64);
 }
 
 /// The app's side: called on a background thread, in order, for everything the server says.
@@ -676,6 +694,72 @@ impl Session {
         on_rt(async move { Ok(c.get_buddy_icon(&login).await?.map(|(hash, data)| BuddyIcon { hash, data })) }).await
     }
 
+    // ----- files -----
+
+    /// Offers `to` a file; the GUID it returns names the transfer from here on.
+    pub async fn offer_file(&self, to: String, name: String, size: u64) -> Result<String, HimError> {
+        let c = self.client.clone();
+        on_rt(async move { Ok(c.offer_file(&to, &name, size).await?) }).await
+    }
+
+    pub async fn accept_file(&self, guid: String) -> Result<(), HimError> {
+        let c = self.client.clone();
+        on_rt(async move { Ok(c.accept_file(&guid).await?) }).await
+    }
+
+    pub async fn decline_file(&self, guid: String) -> Result<(), HimError> {
+        let c = self.client.clone();
+        on_rt(async move { Ok(c.decline_file(&guid).await?) }).await
+    }
+
+    /// Sends the file at `path` as `name`, once FileReady gave us `relay_ref`.
+    pub async fn send_file(&self, relay_ref: u32, path: String, name: String, progress: Arc<dyn TransferProgress>) -> Result<(), HimError> {
+        let c = self.client.clone();
+        on_rt(async move {
+            let f = tokio::fs::File::open(&path).await.map_err(|e| HimError::Connect { message: format!("{path}: {e}") })?;
+            let size = f.metadata().await.map(|m| m.len()).unwrap_or(0);
+            let mut last = std::time::Instant::now();
+            Ok(c.send_file(relay_ref, &name, size, f, |d, t| {
+                if d == t || last.elapsed().as_millis() > 150 {
+                    last = std::time::Instant::now();
+                    progress.update(d, t);
+                }
+            })
+            .await?)
+        })
+        .await
+    }
+
+    /// Receives a file into `folder` (named as the sender named it, made unique); its path.
+    pub async fn receive_file(&self, relay_ref: u32, folder: String, progress: Arc<dyn TransferProgress>) -> Result<String, HimError> {
+        let c = self.client.clone();
+        on_rt(async move {
+            let io = |e: std::io::Error| HimError::Connect { message: e.to_string() };
+            tokio::fs::create_dir_all(&folder).await.map_err(io)?;
+            let part = std::path::Path::new(&folder).join(format!(".him-{relay_ref}.part"));
+            let f = tokio::fs::File::create(&part).await.map_err(io)?;
+            let mut last = std::time::Instant::now();
+            let got = c.receive_file(relay_ref, f, |d, t| {
+                if d == t || last.elapsed().as_millis() > 150 {
+                    last = std::time::Instant::now();
+                    progress.update(d, t);
+                }
+            })
+            .await;
+            let name = match got {
+                Ok(n) => n,
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&part).await;
+                    return Err(e.into());
+                }
+            };
+            let dest = unique(std::path::Path::new(&folder), &name);
+            tokio::fs::rename(&part, &dest).await.map_err(io)?;
+            Ok(dest.to_string_lossy().into_owned())
+        })
+        .await
+    }
+
     // ----- classic Hotline (chat rooms) -----
 
     pub async fn agree(&self, nickname: String, icon: u16) -> Result<(), HimError> {
@@ -770,6 +854,19 @@ impl Session {
         let c = self.client.clone();
         on_rt(async move { Ok(c.gif_icon(user_id).await?) }).await
     }
+}
+
+/// `name`, or "name 2.ext", "name 3.ext"... whichever isn't taken in `dir`.
+fn unique(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let p = dir.join(name);
+    if !p.exists() {
+        return p;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    (2..).map(|n| dir.join(format!("{stem} {n}{ext}"))).find(|p| !p.exists()).unwrap()
 }
 
 // ---------- no connection needed ----------

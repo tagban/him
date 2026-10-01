@@ -30,6 +30,15 @@
   .myicon img { width: 48px; height: 48px; }
   .bottom { flex: none; display: flex; align-items: flex-end; gap: 2px; padding-top: 3px; }
   .bottom .ibtn { width: 48px; }
+  .filebox { display: inline-flex; gap: 6px; align-items: flex-start; margin: 2px 0 2px 4px; padding: 4px 6px; background: #f4f4f4; border: 1px solid #a0a0a0; vertical-align: top; max-width: 260px; }
+  .filebox > svg { width: 22px; height: 22px; flex: none; }
+  .filebox .fsize { color: #505050; font-size: 11px; }
+  .filebox .fstate { color: #303030; font-size: 11px; }
+  .filebox .fbtns { display: flex; gap: 4px; margin-top: 3px; }
+  .filebox .fbtns button { min-width: 0; padding: 0 6px; height: 20px; font-size: 11px; }
+  .fbar { height: 6px; margin-top: 3px; border: 1px solid #808080; background: #fff; }
+  .fbar > div { height: 100%; background: #000080; }
+  .fthumb { display: block; max-width: 220px; max-height: 220px; margin: 4px 0 2px 4px; border: 1px solid #a0a0a0; background: #e9e9e9; }
   .bottom .sendbtn { margin-left: auto; width: 56px; height: 40px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; font-weight: bold; }
   .bottom .sendbtn svg { width: 22px; height: 22px; }
   .smileys { position: absolute; z-index: 30; display: none; grid-template-columns: repeat(6, 26px); gap: 2px; padding: 4px; background: var(--face); box-shadow: inset -1px -1px var(--dark), inset 1px 1px var(--light), inset -2px -2px var(--shadow), inset 2px 2px var(--hilite); }
@@ -62,6 +71,7 @@
       <button class="ibtn" id="b-block" title="Block this person"></button>
       <button class="ibtn" id="b-add" title="Add to your Buddy List"></button>
       <button class="ibtn" id="b-info" title="Get their info"></button>
+      <button class="ibtn" id="b-file" title="Send them a picture or file"></button>
       <button class="sendbtn default" id="b-send"></button>
     </div>
   </div>
@@ -81,6 +91,11 @@
   $('#b-block').innerHTML = ICON.block + 'Block';
   $('#b-add').innerHTML = ICON.addbuddy + 'Add Buddy';
   $('#b-info').innerHTML = ICON.info + 'Get Info';
+  $('#b-file').innerHTML = ICON.file + 'Send File';
+  $('#b-file').onclick = async () => {
+    try { await invoke('send_file', { login }); }
+    catch (e) { setStatus(`<span class="failed">${esc(String(e))}</span>`, 8000); }
+  };
   $('#b-send').innerHTML = ICON.send + 'Send';
 
   setupMenus([
@@ -106,7 +121,55 @@
 
   function nameOf() { return C?.name || login; }
 
+  const kb = n => n < 1024 ? `${n} bytes` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+  const isPic = n => /\.(png|jpe?g|gif|bmp)$/i.test(n);
+
+  // A file between you and them, AIM's way: a little box with what you can do about it.
+  function fileHtml(l) {
+    const f = l.file, mine = l.dir !== 'in';
+    const ts = C?.prefs.timestamps ? `<span class="ts">(${esc(fmtTime(l.ts))}) </span>` : '';
+    const who = mine ? (C?.me || 'Me') : nameOf();
+    const g = esc(f.guid), p = esc(f.path || '');
+    let what = '', buttons = '';
+    switch (f.state) {
+      case 'incoming': what = 'wants to send you'; buttons = `<button data-act="accept" data-g="${g}">Accept</button><button data-act="decline" data-g="${g}">Decline</button>`; break;
+      case 'offered': what = 'is waiting for them to accept'; buttons = `<button data-act="decline" data-g="${g}">Cancel</button>`; break;
+      case 'starting': what = 'starting'; break;
+      case 'moving': what = `${Math.round((f.progress || 0) * 100)}%`; break;
+      case 'done': what = mine ? 'sent' : 'saved to Downloads/HIM'; if (!mine && f.path) buttons = `<button data-act="open" data-p="${p}">Open</button><button data-act="reveal" data-p="${p}">Show</button>`; break;
+      case 'declined': what = mine ? 'not taken' : 'declined'; break;
+      case 'failed': what = `didn't go${f.error ? ': ' + esc(f.error) : ''}`; break;
+    }
+    const bar = f.state === 'moving' ? `<div class="fbar"><div style="width:${Math.round((f.progress || 0) * 100)}%"></div></div>` : '';
+    const thumb = f.state === 'done' && f.path && isPic(f.name) ? `<img class="fthumb" data-path="${p}" alt="">` : '';
+    return `<div class="ln" data-guid="${esc(l.guid)}">${ts}<span class="who ${mine ? 'me' : 'them'}">${esc(who)}:</span>
+      <div class="filebox">${ICON.file}<div><b>${esc(f.name)}</b> <span class="fsize">(${kb(f.size)})</span><br><span class="fstate${f.state === 'failed' ? ' failed' : ''}">${what}</span>${bar}${buttons ? `<div class="fbtns">${buttons}</div>` : ''}</div></div>${thumb}</div>`;
+  }
+
+  // Received pictures show in the window.
+  async function loadThumbs() {
+    for (const img of document.querySelectorAll('img.fthumb:not([src])')) {
+      img.src = 'data:,';
+      try {
+        const bytes = await invoke('file_data', { path: img.dataset.path });
+        img.src = URL.createObjectURL(new Blob([bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)]));
+      } catch { img.remove(); }
+    }
+  }
+
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('.filebox button');
+    if (!b) return;
+    const act = b.dataset.act;
+    try {
+      if (act === 'accept') await invoke('accept_file', { guid: b.dataset.g });
+      else if (act === 'decline') await invoke('decline_file', { guid: b.dataset.g });
+      else await invoke('open_file', { path: b.dataset.p, reveal: act === 'reveal' });
+    } catch (err) { setStatus(`<span class="failed">${esc(String(err))}</span>`, 8000); }
+  });
+
   function lineHtml(l) {
+    if (l.file) return fileHtml(l);
     const ts = C?.prefs.timestamps ? `<span class="ts">(${esc(fmtTime(l.ts))}) </span>` : '';
     if (l.dir === 'system') return `<div class="ln sys">${esc(l.body)}</div>`;
     const mine = l.dir === 'out' || l.dir === 'auto';
@@ -129,6 +192,7 @@
 
   function renderAll() {
     $('#convo').innerHTML = (C?.lines || []).map(lineHtml).join('');
+    loadThumbs();
     scrollDown();
     applySize();
     renderButtons();
@@ -267,6 +331,7 @@
     const existing = $(`.ln[data-guid="${CSS.escape(l.guid)}"]`);
     const html = lineHtml(l);
     if (existing) existing.outerHTML = html; else $('#convo').insertAdjacentHTML('beforeend', html);
+    loadThumbs();
     if (stick) scrollDown();
     if (l.dir === 'in') {
       clearTimeout(theirTypingTimer);

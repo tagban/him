@@ -23,11 +23,23 @@ struct Mark: View {
     return rep.representation(using: .png, properties: [:])!
 }
 
+/// The same picture as a PNG without an alpha channel.
+func opaque(_ data: Data) -> Data {
+    let src = NSBitmapImageRep(data: data)!.cgImage!
+    let ctx = CGContext(data: nil, width: src.width, height: src.height, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: src.width, height: src.height))
+    ctx.draw(src, in: CGRect(x: 0, y: 0, width: src.width, height: src.height))
+    return NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!
+}
+
 @MainActor func run() throws {
     let fm = FileManager.default
-    // iOS: one 1024 square (the system rounds it).
-    try png(Mark(), side: 1024).write(to: URL(fileURLWithPath: "Resources/AppIcon.png"))
-    try png(Mark(), side: 1024).write(to: URL(fileURLWithPath: "iOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png"))
+    // iOS: one 1024 square (the system rounds it), with no alpha channel: the App Store refuses one.
+    let ios = opaque(png(Mark(), side: 1024))
+    try ios.write(to: URL(fileURLWithPath: "Resources/AppIcon.png"))
+    try ios.write(to: URL(fileURLWithPath: "iOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png"))
     // Mac: a rounded square on a transparent canvas, at every size iconutil wants.
     let set = URL(fileURLWithPath: "build/AppIcon.iconset")
     try? fm.removeItem(at: set)

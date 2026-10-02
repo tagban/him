@@ -18,7 +18,7 @@ And in a server's public chat, where it answers "!translate" (leave HUB_HOST emp
   HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500. Several
                           servers: comma-separated, each host or host:port
   HUB_LOGIN, HUB_PASSWORD an account there, or empty to join as a guest
-  HUB_ICON                its classic user icon, default 168
+  HUB_ICON                its classic user icon, default 24433
   HUB_TRIGGER             what starts a command, default !
 """
 
@@ -267,7 +267,7 @@ def main() -> None:
     for entry in filter(None, (h.strip() for h in os.environ.get("HUB_HOST", "").split(","))):
         host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
         rooms.append(TranslatorRoom(bot.brain, host, int(port or os.environ.get("HUB_PORT", "5500")), bot.name,
-                                    int(os.environ.get("HUB_ICON", "168")), os.environ.get("HUB_LOGIN", ""),
+                                    int(os.environ.get("HUB_ICON", "24433")), os.environ.get("HUB_LOGIN", ""),
                                     os.environ.get("HUB_PASSWORD", ""), os.environ.get("HUB_TRIGGER", "!")))
 
     async def all_of_it():

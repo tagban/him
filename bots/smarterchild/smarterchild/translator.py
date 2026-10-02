@@ -8,7 +8,7 @@ unofficial, so Google could change or limit it), or by a LibreTranslate server o
 Settings, from the environment (or a .env file):
   HOTLINE_HOST, HOTLINE_PORT          the server, default hotline.vespernet.net:5500
   TRANSLATOR_LOGIN, TRANSLATOR_PASSWORD  its account (required)
-  TRANSLATOR_NAME     the name buddies see, default The Translator
+  TRANSLATOR_NAME     the name buddies see, default TheTranslator
   TRANSLATOR_STATUS   its status line, default: Say it in any language!
   TRANSLATOR_DATA     where each person's language is kept, default ./data
   TRANSLATE_ENGINE    google (default) or libre
@@ -43,7 +43,7 @@ log = logging.getLogger("translator")
 
 MAX_CHARS = 1000
 
-INTRO = ("Hi, I'm The Translator! Send me something in another language and I'll put it in English. "
+INTRO = ("Hi, I'm TheTranslator! Send me something in another language and I'll put it in English. "
          "To translate into a language, start with it: \"spanish: where is the library?\" Type \"help\" for more.")
 HELP = ("Send me anything in another language and I'll translate it into English (or your language).\n"
         "  spanish: where is the library? - into Spanish (any language, or its code: es:)\n"
@@ -313,7 +313,7 @@ def main() -> None:
     else:
         backend = Google()
     bot = Bot(os.environ.get("HOTLINE_HOST", "hotline.vespernet.net"), int(os.environ.get("HOTLINE_PORT", "5500")),
-              login, password, os.environ.get("TRANSLATOR_NAME", "The Translator"),
+              login, password, os.environ.get("TRANSLATOR_NAME", "TheTranslator"),
               os.environ.get("TRANSLATOR_STATUS", "Say it in any language!"), data,
               brain=Translator(data, backend), app_string="The Translator 0.1", welcome=INTRO,
               bang_commands=False)

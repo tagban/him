@@ -26,7 +26,7 @@
   .composerow { flex: none; display: flex; gap: 4px; }
   .entry { flex: 1; min-width: 0; height: 64px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
   /* Their Buddy Icon: the lower-left corner, no frame, right on the window's gray (as AIM had it) */
-  .buddyicon { display: none; width: 48px; height: 48px; flex: none; margin: 0 6px 0 2px; align-self: flex-end; }
+  .buddyicon { display: none; width: 48px; height: 48px; flex: none; margin: 0 6px 0 2px; align-self: flex-end; background: var(--icon-bg); }
   .buddyicon.on { display: block; }
   .buddyicon img { width: 48px; height: 48px; display: block; }
   .bottom { flex: none; display: flex; align-items: flex-end; gap: 2px; padding-top: 3px; }
@@ -39,7 +39,7 @@
   .filebox .fbtns button { min-width: 0; padding: 0 6px; height: 20px; font-size: 11px; }
   .fbar { height: 6px; margin-top: 3px; border: 1px solid var(--shadow); background: var(--pane); }
   .fbar > div { height: 100%; background: var(--select); }
-  .fthumb { cursor: pointer; display: block; max-width: 220px; max-height: 220px; margin: 4px 0 2px 4px; border: 1px solid var(--shadow); background: var(--face); }
+  .fthumb { cursor: pointer; display: block; max-width: 220px; max-height: 220px; margin: 4px 0 2px 4px; border: 1px solid var(--shadow); background: var(--icon-bg); }
   .bottom .sendbtn { margin-left: auto; width: 56px; height: 40px; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 10px; font-weight: bold; }
   .bottom .sendbtn svg { width: 22px; height: 22px; }
   .smileys { position: absolute; z-index: 30; display: none; grid-template-columns: repeat(6, 26px); gap: 2px; padding: 4px; background: var(--face); box-shadow: inset -1px -1px var(--dark), inset 1px 1px var(--light), inset -2px -2px var(--shadow), inset 2px 2px var(--hilite); }

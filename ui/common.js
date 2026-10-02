@@ -21,7 +21,7 @@ const THEMES = {
 const COLOR_NAMES = [
   ['face', 'Windows'], ['text', 'Text'], ['muted', 'Quieter text'], ['pane', 'Text boxes and lists'],
   ['title-a', 'Title bar'], ['title-b', 'Title bar fade'], ['select', 'Selection'],
-  ['me', 'Your name in IMs'], ['them', 'Their name in IMs'], ['link', 'Links'], ['notice', 'Notices'],
+  ['me', 'Your name in IMs'], ['them', 'Their name in IMs'], ['link', 'Links'], ['notice', 'Notices'], ['icon-bg', 'Behind Buddy Icons'],
 ];
 const THEME_VARS = [...new Set([...Object.keys(THEMES.dark), ...COLOR_NAMES.map(c => c[0])])];
 

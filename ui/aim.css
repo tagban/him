@@ -20,6 +20,7 @@
   --pane: #ffffff;        /* text boxes and white panes (conversations, lists) */
   --select-text: #ffffff; /* on the selection and the title bar */
   --notice: #ffffe1;      /* the one-line notices */
+  --icon-bg: #e9e9e9;     /* behind Buddy Icons: the light gray they were drawn for, in every theme */
   --font: Tahoma, "Geneva", "Verdana", sans-serif;
   --size: 11px;
 }

@@ -27,5 +27,5 @@ def test_someone_in_danger_gets_a_serious_answer(tmp_path):
 
 def test_the_skills_still_answer(tmp_path):
     b = Brain(tmp_path)
-    assert "remember" in ask(b, "remember my favorite band is Weezer").lower()
+    assert "Weezer" in ask(b, "remember my favorite band is Weezer")
     assert "Weezer" in ask(b, "what do you know about me")

@@ -12,6 +12,7 @@ test = ["pytest>=8"]
 [project.scripts]
 smarterchild = "smarterchild.bot:main"
 bugbot = "smarterchild.bugbot:main"
+translator = "smarterchild.translator:main"
 
 [build-system]
 requires = ["setuptools>=68"]

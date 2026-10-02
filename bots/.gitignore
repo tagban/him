@@ -1,2 +1,4 @@
 bugbot/.env
 bugbot/data/
+translator/.env
+translator/data/

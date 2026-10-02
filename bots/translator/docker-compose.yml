@@ -1,0 +1,33 @@
+# The Translator on a server: `docker compose up -d --build`, logs with `docker compose logs -f`.
+# It runs from SmarterChild's code (the same Hotline client) and translates with
+# LibreTranslate, which runs here too and is only reachable by the bot. Its settings and
+# password go in .env beside this file (see .env.example), never in git.
+services:
+  translator:
+    build: ../smarterchild
+    command: ["translator"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TRANSLATOR_DATA: /data
+      TRANSLATE_URL: http://libretranslate:5000
+    volumes:
+      - ./data:/data
+    depends_on:
+      - libretranslate
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    restart: unless-stopped
+    environment:
+      # Fewer languages, less memory (each one loaded costs some). Add codes to taste;
+      # "languages" in IM shows what's loaded.
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,es,fr,de,it,pt,ru,ja,zh,ko,ar,hi,nl,pl,tr,sv,uk,vi,el,he}
+      LT_UPDATE_MODELS: "true"
+    volumes:
+      # The language models (a few GB), kept so they download once. A named volume,
+      # so it belongs to LibreTranslate's own user.
+      - models:/home/libretranslate/.local:rw
+
+volumes:
+  models:

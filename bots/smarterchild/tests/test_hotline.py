@@ -167,3 +167,35 @@ def test_hub_chat_answers_only_when_addressed(mock_server, tmp_path):
         task.cancel()
 
     asyncio.run(run())
+
+
+def test_a_file_goes_through_the_sealed_relay(mock_server):
+    picture = bytes(range(256)) * 700  # bigger than a chunk
+
+    async def run():
+        alice, bob, got = await _pair(mock_server)
+        guid = await alice.offer_file("bob", "../shot.png", len(picture))
+        offer = (await _next(got["bob"], "file_offer"))["offer"]
+        assert (offer.sender, offer.name, offer.size, offer.guid) == ("alice", "shot.png", len(picture), guid)
+        await bob.accept_file(offer.guid)
+        up = (await _next(got["alice"], "file_ready"))["relay_ref"]
+        down = (await _next(got["bob"], "file_ready"))["relay_ref"]
+        _, (name, data) = await asyncio.gather(alice.send_file(up, "shot.png", picture),
+                                               bob.receive_file(down, 1 << 20))
+        assert (name, data) == ("shot.png", picture)
+        # and one that's too big is refused
+        guid = await alice.offer_file("bob", "huge.png", len(picture))
+        await bob.accept_file((await _next(got["bob"], "file_offer"))["offer"].guid)
+        up = (await _next(got["alice"], "file_ready"))["relay_ref"]
+        down = (await _next(got["bob"], "file_ready"))["relay_ref"]
+        sent = asyncio.create_task(alice.send_file(up, "huge.png", picture))
+        try:
+            await bob.receive_file(down, 1000)
+            raise AssertionError("took a file over the limit")
+        except hotline.FileTooBig:
+            pass
+        await asyncio.wait([sent], timeout=3)
+        await alice.close()
+        await bob.close()
+
+    asyncio.run(run())

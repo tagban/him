@@ -61,6 +61,7 @@ class Bot:
         self.recent: dict[str, deque] = defaultdict(deque)  # login -> times of recent messages
         self.warned: dict[str, float] = {}
         self.locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self.taking: dict[bytes, tuple[str, str]] = {}  # transfer GUID -> (login, file name)
 
     async def send(self, to: str, text: str) -> None:
         if not self.client or self.client.closed.is_set():
@@ -73,6 +74,44 @@ class Bot:
             asyncio.create_task(self.on_message(data["message"]))
         elif kind == "friend_request":
             asyncio.create_task(self.welcome(data["login"]))
+        elif kind == "file_offer":
+            asyncio.create_task(self.on_file_offer(data["offer"]))
+        elif kind == "file_ready" and data["guid"] in self.taking:
+            asyncio.create_task(self.on_file_ready(data["guid"], data["relay_ref"]))
+
+    async def on_file_offer(self, offer: hotline.FileOffer) -> None:
+        """Files go to a brain that wants them (BugBot's screenshots); the rest are turned down."""
+        assert self.client
+        want = getattr(self.brain, "wants_file", None)
+        ok, reply = want(offer.sender, offer.name, offer.size) if want else (
+            False, "I can't take files, sorry! Words only.")
+        try:
+            if ok:
+                self.taking[offer.guid] = (offer.sender, offer.name)
+                await self.client.accept_file(offer.guid)
+            else:
+                await self.client.decline_file(offer.guid)
+        except HotlineError as e:
+            log.warning("file from %s: %s", offer.sender, e)
+            self.taking.pop(offer.guid, None)
+            return
+        if reply:
+            await self.send(offer.sender, reply)
+
+    async def on_file_ready(self, guid: bytes, relay_ref: int) -> None:
+        assert self.client
+        login, name = self.taking.pop(guid)
+        try:
+            name, data = await self.client.receive_file(relay_ref, self.brain.MAX_FILE)
+            replies = await self.brain.got_file(login, name, data)
+        except hotline.FileTooBig:
+            replies = ["That file's too big for me, sorry."]
+        except Exception as e:
+            log.warning("receiving %s from %s: %s", name, login, e)
+            replies = ["That file didn't come through. Want to try sending it again?"]
+        async with self.locks[login.lower()]:
+            for r in replies:
+                await self.send(login, r)
 
     async def welcome(self, login: str) -> None:
         assert self.client

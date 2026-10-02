@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import struct
 from dataclasses import dataclass, field as dfield
 from typing import Awaitable, Callable
@@ -50,6 +51,10 @@ class Tx:
     IM_DELIVER = 811
     IM_ACK = 812
     IM_TYPING = 813
+    FILE_OFFER = 814
+    FILE_ACCEPT = 815
+    FILE_DECLINE = 816
+    FILE_READY = 817
     GET_USER_INFO = 825
 
 
@@ -65,11 +70,14 @@ class F:
     USER_FLAGS = 112
     OPTIONS = 113
     CHAT_ID = 114
+    FILE_NAME = 201
+    FILE_SIZE = 207
     USER_NAME_WITH_INFO = 300
     NO_AGREEMENT = 154
     VERSION = 160
     SERVER_NAME = 162
     CAPABILITIES = 0x01F0
+    FILE_SIZE64 = 0x01F1
     HOPE_APP_ID = 0x0E01
     HOPE_APP_STRING = 0x0E02
     HOPE_SESSION_KEY = 0x0E03
@@ -86,6 +94,8 @@ class F:
     MESSAGE_TIMESTAMP = 0x0607
     ACK_TYPE = 0x0608
     TYPING_STATE = 0x0609
+    FILE_TRANSFER_GUID = 0x060A
+    FILE_RELAY_REF = 0x060B
     REASON_CODE = 0x060F
     REQUEST_NOTE = 0x0610
     DISCOVERABLE = 0x0611
@@ -228,6 +238,17 @@ def aead_keys(alg: str, password: bytes, session_key: bytes) -> tuple[bytes, byt
     return kdf(enc, b"hope-chacha-encode"), kdf(dec, b"hope-chacha-decode")
 
 
+def ft_base_key(encode: bytes, decode: bytes, session_key: bytes) -> bytes:
+    """The key every file transfer's key comes from, on an AEAD session."""
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=session_key,
+                info=b"hope-file-transfer").derive(encode + decode)
+
+
+def transfer_key(base: bytes, relay_ref: int) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=struct.pack(">I", relay_ref),
+                info=b"hope-ft-ref").derive(base)
+
+
 class Sealer:
     """One direction of the AEAD transport: nonce = direction byte, 3 zeros, u64 counter."""
 
@@ -318,6 +339,86 @@ class Wire:
 
 # ---------- the session ----------
 
+CHUNK = 64 * 1024
+
+
+class FileTooBig(HotlineError):
+    pass
+
+
+class Transfer:
+    """A file-transfer connection (HTXF, guide §14): plain bytes, or AEAD frames
+    (u32 length, then the sealed piece) with the transfer's own key."""
+
+    def __init__(self, r: asyncio.StreamReader, w: asyncio.StreamWriter, key: bytes | None):
+        self.r, self.w = r, w
+        self.ours = Sealer(key, 0x01) if key else None
+        self.theirs = Sealer(key, 0x00) if key else None
+        self.buf = b""
+
+    async def _next(self) -> bytes:
+        if self.theirs is None:
+            return await asyncio.wait_for(self.r.read(CHUNK), 60)
+        try:
+            (n,) = struct.unpack(">I", await asyncio.wait_for(self.r.readexactly(4), 60))
+        except asyncio.IncompleteReadError:
+            return b""
+        if n > MAX_READ:
+            raise HotlineError("The transfer sent a frame too big to be real.")
+        return self.theirs.open(await asyncio.wait_for(self.r.readexactly(n), 60))
+
+    async def read(self, n: int) -> bytes:
+        while len(self.buf) < n:
+            more = await self._next()
+            if not more:
+                raise HotlineError("The transfer stopped partway.")
+            self.buf += more
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    async def skip(self, n: int) -> None:
+        while n > 0:
+            k = min(n, CHUNK)
+            await self.read(k)
+            n -= k
+
+    async def write(self, data: bytes) -> None:
+        if self.ours is None:
+            self.w.write(data)
+        else:
+            for i in range(0, len(data), CHUNK):
+                sealed = self.ours.seal(data[i:i + CHUNK])
+                self.w.write(struct.pack(">I", len(sealed)) + sealed)
+        await self.w.drain()
+
+    def close(self) -> None:
+        self.w.close()
+
+
+def safe_name(name: str) -> str:
+    """No paths, no control characters, not hidden."""
+    base = re.split(r"[/\\:]", name)[-1]
+    clean = "".join(c for c in base if c.isprintable()).strip().lstrip(".")[:120]
+    return clean or "file"
+
+
+def _fork(kind: bytes, length: int) -> bytes:
+    return kind + bytes(8) + struct.pack(">I", length)
+
+
+def _info_fork(name: bytes) -> bytes:
+    """Platform, type, creator, flags, dates (left zero), the name, an empty comment."""
+    return b"AMAC????????" + bytes(8) + bytes(32) + bytes(16) + struct.pack(">HH", 0, len(name)) + name + bytes(2)
+
+
+@dataclass
+class FileOffer:
+    sender: str
+    guid: bytes
+    name: str
+    size: int
+
+
 @dataclass
 class Message:
     guid: bytes
@@ -372,6 +473,7 @@ class Client:
         self.closed = asyncio.Event()
         self.close_reason = ""
         self.early: list[Transaction] = []
+        self.ft_base: bytes | None = None  # AEAD sessions: transfers are sealed too
 
     # text
     def enc(self, s: str) -> bytes:
@@ -474,6 +576,7 @@ class Client:
             encode, decode = aead_keys(alg, pw, key)
             wire.tx = Sealer(decode, 0x01)
             wire.rx = Sealer(encode, 0x00)
+            self.ft_base = ft_base_key(encode, decode, key)
             first, plain = await asyncio.wait_for(wire.read_first_sealed(), 25)
             if plain:
                 return self._finish(wire, first)
@@ -564,6 +667,20 @@ class Client:
         elif t.ty == Tx.IM_ACK:
             await self._emit("ack", {"login": s(F.FRIEND_LOGIN), "guid": t.get(F.MESSAGE_GUID),
                                      "read": t.uint(F.ACK_TYPE) == 2})
+        elif t.ty == Tx.FILE_OFFER:
+            guid = t.get(F.FILE_TRANSFER_GUID)
+            if guid is None:
+                return
+            size = t.uint(F.FILE_SIZE64)
+            offer = FileOffer(s(F.FRIEND_LOGIN), guid, safe_name(s(F.FILE_NAME)),
+                              size if size is not None else t.uint(F.FILE_SIZE) or 0)
+            await self._emit("file_offer", {"offer": offer})
+        elif t.ty == Tx.FILE_READY:
+            guid, ref = t.get(F.FILE_TRANSFER_GUID), t.uint(F.FILE_RELAY_REF)
+            if guid is not None and ref is not None:
+                await self._emit("file_ready", {"guid": guid, "relay_ref": ref})
+        elif t.ty == Tx.FILE_DECLINE:
+            await self._emit("file_declined", {"guid": t.get(F.FILE_TRANSFER_GUID), "login": s(F.FRIEND_LOGIN)})
         elif t.ty == Tx.SHOW_AGREEMENT:
             # Agreements are accepted without reading them, as HIM does.
             self.notify(Tx.AGREED, [(F.USER_NAME, self.enc(self.nickname)), u16(F.USER_ICON_ID, self.icon),
@@ -666,6 +783,70 @@ class Client:
 
     def typing(self, login: str, on: bool) -> None:
         self.notify(Tx.IM_TYPING, [(F.FRIEND_LOGIN, self.enc(login)), u16(F.TYPING_STATE, int(on))])
+
+    # ---- files (guide §14, the relay path) ----
+
+    async def accept_file(self, guid: bytes) -> None:
+        """Takes an offered file; "file_ready" follows with the relay reference."""
+        await self.request(Tx.FILE_ACCEPT, [(F.FILE_TRANSFER_GUID, guid)])
+
+    async def decline_file(self, guid: bytes) -> None:
+        await self.request(Tx.FILE_DECLINE, [(F.FILE_TRANSFER_GUID, guid)])
+
+    async def offer_file(self, to: str, name: str, size: int) -> bytes:
+        """Offers `to` a file; returns the transfer's GUID ("file_ready" follows if they accept)."""
+        guid = os.urandom(16)
+        await self.request(Tx.FILE_OFFER, [(F.FRIEND_LOGIN, self.enc(to)), (F.FILE_NAME, self.enc(safe_name(name))),
+                                           (F.FILE_SIZE, struct.pack(">I", size)), (F.FILE_TRANSFER_GUID, guid)])
+        return guid
+
+    async def _open_transfer(self, relay_ref: int, size: int) -> Transfer:
+        r, w = await asyncio.wait_for(asyncio.open_connection(self.host, self.port + 1), 15)
+        w.write(b"HTXF" + struct.pack(">III", relay_ref, size, 0))
+        await w.drain()
+        return Transfer(r, w, transfer_key(self.ft_base, relay_ref) if self.ft_base else None)
+
+    async def receive_file(self, relay_ref: int, max_bytes: int) -> tuple[str, bytes]:
+        """The receiving side, once "file_ready" arrives: the file's name and bytes.
+        Raises FileTooBig past `max_bytes`."""
+        x = await self._open_transfer(relay_ref, 0)
+        try:
+            head = await x.read(24)
+            if head[:4] != b"FILP":
+                raise HotlineError("That wasn't a file.")
+            name, data = "file", None
+            for _ in range(min(struct.unpack_from(">H", head, 22)[0], 8)):
+                fh = await x.read(16)
+                kind, (length,) = fh[:4], struct.unpack_from(">I", fh, 12)
+                if kind == b"INFO":
+                    info = await x.read(min(length, 4096))
+                    await x.skip(length - len(info))
+                    if len(info) >= 72:
+                        (n,) = struct.unpack_from(">H", info, 70)
+                        name = safe_name(self.dec(info[72:72 + n]))
+                elif kind == b"DATA":
+                    if length > max_bytes:
+                        raise FileTooBig(f"{length} bytes")
+                    data = await x.read(length)
+                else:
+                    await x.skip(length)  # a resource fork: not needed
+            if data is None:
+                raise HotlineError("The file arrived empty.")
+            return name, data
+        finally:
+            x.close()
+
+    async def send_file(self, relay_ref: int, name: str, data: bytes) -> None:
+        """The sending side, once "file_ready" arrives."""
+        info = _info_fork(self.enc(safe_name(name)))
+        total = 24 + 16 + len(info) + 16 + len(data)
+        x = await self._open_transfer(relay_ref, total)
+        try:
+            await x.write(b"FILP" + struct.pack(">H", 1) + bytes(16) + struct.pack(">H", 2)
+                          + _fork(b"INFO", len(info)) + info + _fork(b"DATA", len(data)))
+            await x.write(data)
+        finally:
+            x.close()
 
     # ---- classic chat ----
 

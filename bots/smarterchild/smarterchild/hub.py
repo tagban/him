@@ -70,8 +70,9 @@ def addressed(text: str, names: list[str]) -> str | None:
 
 class Hub:
     def __init__(self, brain: Brain, host: str, port: int, name: str, icon: int,
-                 login: str = "", password: str = "", trigger: str = "!"):
+                 login: str = "", password: str = "", trigger: str = "!", app_string: str = "SmarterChild 0.1"):
         self.brain, self.host, self.port = brain, host, port
+        self.app_string = app_string
         self.name, self.icon, self.login, self.password = name, icon, login, password
         self.trigger = trigger
         self.names = sorted({name, name.replace(" ", ""), "smarterchild", "smarter child"}, key=len, reverse=True)
@@ -142,7 +143,7 @@ class Hub:
 
     async def session(self) -> None:
         c = Client(self.host, self.port, self.login, self.password, nickname=self.name, icon=self.icon,
-                   classic=True, app_string="SmarterChild 0.1", on_event=self.on_event)
+                   classic=True, app_string=self.app_string, on_event=self.on_event)
         await c.connect()
         self.client = c
         log.info("in %s's chat as %s (icon %d, %s)", c.server_name or self.host, self.name, self.icon, c.transport)

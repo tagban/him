@@ -14,6 +14,17 @@ with a language to translate into it.
 | `languages` | the ones it knows |
 | `help` | this list |
 
+It also sits in the Hotline Central Hub's public chat (`HUB_HOST` in `.env`), where it
+answers only `!translate` (or `!tr`) lines, including ones the Discord bridge relays:
+
+| In chat | It says |
+|---|---|
+| `!translate ¿dónde está la biblioteca?` | Pat: (Spanish → English) Where is the library? |
+| `!translate spanish: where is the library?` | into Spanish (also `!translate to spanish ...`, `!tr es: ...`) |
+| `!translate` | how to use it |
+
+Private messages to it on the Hub are answered like IMs.
+
 The translating is done by [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
 (open source), running on the same server; messages aren't sent to any outside
 service. It runs from SmarterChild's code (`../smarterchild`, the `translator` command).

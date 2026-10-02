@@ -13,6 +13,13 @@ Settings, from the environment (or a .env file):
   TRANSLATOR_DATA     where each person's language is kept, default ./data
   TRANSLATE_URL       LibreTranslate, default http://libretranslate:5000
   TRANSLATE_KEY       its API key, if it wants one
+
+And in a server's public chat, where it answers "!translate" (leave HUB_HOST empty to stay out):
+  HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500. Several
+                          servers: comma-separated, each host or host:port
+  HUB_LOGIN, HUB_PASSWORD an account there, or empty to join as a guest
+  HUB_ICON                its classic user icon, default 168
+  HUB_TRIGGER             what starts a command, default !
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import time
 import urllib.request
@@ -40,6 +48,8 @@ HELP = ("Send me anything in another language and I'll translate it into English
         "  english: ¿dónde está la biblioteca? - into English\n"
         "  my language is french - what I translate into when you don't say\n"
         "  languages - the ones I know")
+ROOM_HELP = ("!translate <text> puts it in English. !translate spanish: <text> puts it in Spanish "
+             "(any language). !translate languages lists them. Or IM me.")
 
 # Other ways people name languages: their own names, and a few common ones.
 ALIASES = {
@@ -116,18 +126,34 @@ class Translator:
     async def _name(self, code: str) -> str:
         return (await self.backend.languages()).get(code, code)
 
-    async def answer(self, login: str, text: str) -> list[str]:
+    async def room_request(self, rest: str) -> str:
+        """A chat command's words in the IM form: "to spanish hello" and "spanish hello" become
+        "spanish: hello" (a language's full name only, so "!translate hola amigos" stays whole)."""
+        r = rest.strip()
+        m = re.match(r"(?i)(?:(?:in)?to|in)\s+(\S+)\s+(.+)$", r, re.S)
+        if m and await self._code(m[1]):
+            return f"{m[1]}: {m[2]}"
+        first, _, more = r.partition(" ")
+        if more and not first.endswith(":"):
+            langs = await self.backend.languages()
+            name = ALIASES.get(first.lower(), first.lower())
+            if name in (v.lower() for v in langs.values()):
+                return f"{first}: {more}"
+        return r
+
+    async def answer(self, login: str, text: str, room: bool = False) -> list[str]:
+        """`room`: a chat command, which always means English unless it names a language."""
         t = text.strip()
         word = t.lower().rstrip(".!?")
         try:
-            if word in ("help", "?", "commands", "menu"):
-                return [HELP]
+            if word in ("help", "?", "commands", "menu", ""):
+                return [ROOM_HELP if room else HELP]
             if word in ("hi", "hello", "hey", "yo", "sup", "hiya"):
                 return [INTRO]
             if word in ("languages", "list", "what languages", "which languages"):
                 names = sorted((await self.backend.languages()).values())
                 return ["I know: " + ", ".join(names) + "."]
-            if m := SET_LANG.match(t):
+            if not room and (m := SET_LANG.match(t)):
                 code = await self._code(m[1])
                 if not code:
                     return [f"I don't know {m[1]} yet. Type \"languages\" to see the ones I do."]
@@ -135,7 +161,7 @@ class Translator:
                 self.prefs.save()
                 return [f"Okay! When you don't say, I'll translate into {await self._name(code)}."]
 
-            mine = self.prefs.data.get(login.lower(), "en")
+            mine = "en" if room else self.prefs.data.get(login.lower(), "en")
             target, chosen = mine, False
             if (m := PREFIX.match(t)) and (code := await self._code(m[1])):
                 target, t, chosen = code, m[2].strip(), True
@@ -147,6 +173,8 @@ class Translator:
             out, source = await self.backend.translate(t, target)
             if source == target and not chosen:
                 there = await self._name(target)
+                if room:
+                    return [f"That's already {there}! Try: !translate spanish: {t[:40]}"]
                 return [f"That's already {there}! To translate it, start with a language, like "
                         f"\"spanish: {t[:40]}\"."]
             if source == target or out.strip().lower() == t.lower():
@@ -156,6 +184,67 @@ class Translator:
         except Exception:
             log.exception("translating for %s", login)
             return ["My dictionary's stuck. Try again in a minute?"]
+
+
+class TranslatorRoom:
+    """The Translator in a server's public chat: answers "!translate ..." (and "!tr ...") lines,
+    including ones the Discord bridge relays, and private messages like IMs."""
+
+    WORDS = ("translate", "tr", "translator")
+
+    def __init__(self, translator: Translator, host: str, port: int, name: str, icon: int,
+                 login: str = "", password: str = "", trigger: str = "!"):
+        from .hub import Hub
+
+        self.t = translator
+        self.hub = Hub(None, host, port, name, icon, login, password, trigger, app_string="The Translator 0.1")
+        self.hub.names = [name]
+        self.hub.on_chat = self.on_chat
+        self.hub.on_private = self.on_private
+
+    def request(self, text: str) -> str | None:
+        """The words after "!translate", or None for any other line."""
+        trig = self.hub.trigger
+        if not trig or not text.startswith(trig):
+            return None
+        word, _, rest = text[len(trig):].strip().partition(" ")
+        return rest.strip() if word.lower() in self.WORDS else None
+
+    async def on_chat(self, raw: str) -> None:
+        from .hub import CHAT_LINE, RELAYED
+
+        m = CHAT_LINE.match(raw.lstrip("\r\n"))
+        if not m:
+            return
+        who, text = m[1].strip(), m[2].strip()
+        if who.lower() == self.hub.name.lower():
+            return
+        if r := RELAYED.match(text):
+            who, text = r[2].strip(), r[3].strip()
+        rest = self.request(text)
+        if rest is None:
+            return
+        if not self.hub._room_ok(f"hub:{who}"):
+            log.info("chat %s %s: rate limited", self.hub.host, who)
+            return
+        replies = await self.t.answer(f"hub:{who}", await self.t.room_request(rest), room=True)
+        await asyncio.sleep(random.uniform(0.5, 1.2))
+        c = self.hub.client
+        if c:
+            c.send_chat((f"{who}: " + " ".join(replies).replace("\n", " "))[: c.max_message_bytes or 4000])
+        log.info("chat %s %s: %r", self.hub.host, who, rest[:60])
+
+    async def on_private(self, uid: int, who: str, text: str) -> None:
+        rest = self.request(text.strip())
+        q = await self.t.room_request(rest) if rest is not None else text
+        for i, r in enumerate(await self.t.answer(f"hub:{who}", q)):
+            if i:
+                await asyncio.sleep(0.8)
+            if self.hub.client:
+                self.hub.client.send_private(uid, r.replace("\n", "\r"))
+
+    async def run(self) -> None:
+        await self.hub.run()
 
 
 def main() -> None:
@@ -174,8 +263,18 @@ def main() -> None:
               os.environ.get("TRANSLATOR_STATUS", "Say it in any language!"), data,
               brain=Translator(data, backend), app_string="The Translator 0.1", welcome=INTRO,
               bang_commands=False)
+    rooms = []
+    for entry in filter(None, (h.strip() for h in os.environ.get("HUB_HOST", "").split(","))):
+        host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
+        rooms.append(TranslatorRoom(bot.brain, host, int(port or os.environ.get("HUB_PORT", "5500")), bot.name,
+                                    int(os.environ.get("HUB_ICON", "168")), os.environ.get("HUB_LOGIN", ""),
+                                    os.environ.get("HUB_PASSWORD", ""), os.environ.get("HUB_TRIGGER", "!")))
+
+    async def all_of_it():
+        await asyncio.gather(bot.run(), *(r.run() for r in rooms))
+
     try:
-        asyncio.run(bot.run())
+        asyncio.run(all_of_it())
     except KeyboardInterrupt:
         pass
 

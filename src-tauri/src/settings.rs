@@ -21,6 +21,7 @@ pub const SIGNUP_PAGES: &[(&str, &str)] = &[("hotline.vespernet.net", "https://a
 pub const SUGGESTED_BUDDIES: &[(&str, &str, &str, &str)] = &[
     ("hotline.vespernet.net", "john", "John", "Made HIM. Say hi!"),
     ("hotline.vespernet.net", "smarterchild", "SmarterChild", "A chatbot: weather, news, trivia"),
+    ("hotline.vespernet.net", "bugbot", "BugBot", "Tell it about bugs and ideas for HIM"),
 ];
 
 /// Debug builds also suggest on the local test server (mock-server), to try it there.

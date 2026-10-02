@@ -1,0 +1,13 @@
+# BugBot on a server: `docker compose up -d --build`, logs with `docker compose logs -f`.
+# It runs from SmarterChild's code (the same Hotline client); its settings and its
+# password and GitHub token go in .env beside this file (see .env.example), never in git.
+services:
+  bugbot:
+    build: ../smarterchild
+    command: ["bugbot"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BUGBOT_DATA: /data
+    volumes:
+      - ./data:/data

@@ -22,6 +22,7 @@ public enum Defaults {
         "hotline.vespernet.net": [
             Suggestion(login: "john", name: "John", about: "Made HIM. Say hi!"),
             Suggestion(login: "smarterchild", name: "SmarterChild", about: "A chatbot: weather, news, trivia and more"),
+            Suggestion(login: "bugbot", name: "BugBot", about: "Tell it about bugs and ideas for HIM"),
         ],
         // Debug builds: the local test server (mock-server), to try it there.
         "127.0.0.1": debugOnly([

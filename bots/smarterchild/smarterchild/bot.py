@@ -47,11 +47,16 @@ def load_env(path: Path) -> None:
 
 
 class Bot:
-    def __init__(self, host: str, port: int, login: str, password: str, name: str, status: str, data: Path):
+    def __init__(self, host: str, port: int, login: str, password: str, name: str, status: str, data: Path,
+                 brain=None, app_string: str = "SmarterChild 0.1", welcome: str | None = None,
+                 bang_commands: bool = True):
+        """`brain` answers messages (`answer(login, text) -> [replies]`); SmarterChild's own by
+        default. BugBot brings its own, a welcome line, and no "!" commands or reminders."""
         self.host, self.port, self.login, self.password = host, port, login, password
         self.name, self.status = name, status
-        self.brain = Brain(data, name)
+        self.brain = brain if brain is not None else Brain(data, name)
         self.brain.send = self.send
+        self.app_string, self.welcome_text, self.bang_commands = app_string, welcome, bang_commands
         self.client: Client | None = None
         self.recent: dict[str, deque] = defaultdict(deque)  # login -> times of recent messages
         self.warned: dict[str, float] = {}
@@ -75,8 +80,9 @@ class Bot:
             await self.client.accept(login)
             log.info("accepted %s", login)
             await asyncio.sleep(1.5)
-            await self.send(login, f"Thanks for adding me! I'm {self.name}. Ask me for the weather, a word, some math, "
-                                   "or a game of trivia. Type \"help\" to see everything.")
+            await self.send(login, self.welcome_text or (
+                f"Thanks for adding me! I'm {self.name}. Ask me for the weather, a word, some math, "
+                "or a game of trivia. Type \"help\" to see everything."))
         except HotlineError as e:
             log.warning("couldn't accept %s: %s", login, e)
 
@@ -101,8 +107,11 @@ class Bot:
             c.typing(m.sender, True)
             started = time.time()
             try:
-                from .hub import command  # "!weather Boston" works in IM too, out of habit
-                replies = await self.brain.answer(m.sender, command(m.body.strip()) or m.body)
+                text = m.body
+                if self.bang_commands:
+                    from .hub import command  # "!weather Boston" works in IM too, out of habit
+                    text = command(m.body.strip()) or m.body
+                replies = await self.brain.answer(m.sender, text)
             except Exception:
                 log.exception("answering %s", m.sender)
                 replies = ["Oops, something went wrong in my circuits. Try that again?"]
@@ -123,7 +132,7 @@ class Bot:
 
     async def session(self) -> None:
         c = Client(self.host, self.port, self.login, self.password, nickname=self.name,
-                   app_string="SmarterChild 0.1", on_event=self.on_event)
+                   app_string=self.app_string, on_event=self.on_event)
         await c.connect()
         self.client = c
         log.info("signed on to %s as %s (%s)", c.server_name or self.host, self.login, c.transport)
@@ -133,7 +142,8 @@ class Bot:
             if b.state == hotline.PENDING_IN:
                 asyncio.create_task(self.welcome(b.login))
         while not c.closed.is_set():
-            await skills.run_reminders(self.brain)
+            if isinstance(self.brain, Brain):
+                await skills.run_reminders(self.brain)
             try:
                 await asyncio.wait_for(c.closed.wait(), 5)
             except asyncio.TimeoutError:

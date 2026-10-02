@@ -117,12 +117,14 @@ class Bot:
                 replies = ["Oops, something went wrong in my circuits. Try that again?"]
             if late:
                 replies.insert(0, "Sorry, I was offline when you sent that!")
-            # Look like we're typing for a moment: SmarterChild never answered instantly.
-            await asyncio.sleep(max(0.0, min(0.6 + len(replies[0]) / 400, 2.0) - (time.time() - started)))
+            # Look like we're typing for a second or two: SmarterChild never answered instantly.
+            await asyncio.sleep(max(0.0, typing_time(replies[0]) - (time.time() - started)))
             c.typing(m.sender, False)
             for i, r in enumerate(replies):
-                if i:
-                    await asyncio.sleep(0.8)
+                if i:  # and again before each follow-up
+                    c.typing(m.sender, True)
+                    await asyncio.sleep(typing_time(r) * 0.7)
+                    c.typing(m.sender, False)
                 try:
                     await self.send(m.sender, r)
                 except HotlineError as e:
@@ -177,6 +179,11 @@ class Bot:
             log.info("reconnecting in %ds", wait)
             await asyncio.sleep(wait + random.random() * 2)
             wait = min(wait * 2, 300)
+
+
+def typing_time(reply: str) -> float:
+    """How long to look busy before a reply: a second or two, longer for longer replies."""
+    return min(1.0 + len(reply) / 250, 2.5) + random.uniform(0, 0.4)
 
 
 def split(text: str, limit: int, enc) -> list[str]:

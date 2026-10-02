@@ -67,6 +67,10 @@ def register(b: Brain) -> None:
     async def number(ctx: Ctx, m):
         return menu_item(int(m[1]))
 
+    # The prepared answers (answers.py) come before the skills, so "can I talk to a human"
+    # isn't taken for an 8-ball question; and the safety answer comes before everything.
+    from . import answers
+    answers.register(b)
     _memory(b)
     _places(b)
     _reminders(b)

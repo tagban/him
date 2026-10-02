@@ -130,19 +130,6 @@ def register(b: Brain) -> None:
     def filler(ctx, m):
         return _pick("OK!", "Alright.", "Gotcha.", "Cool.", "So... what's next?")
 
-    @say(r"what'?s your favorite (color|colour)")
-    def fav_color(ctx, m):
-        return "Hotline red. It's the color of the big H."
-
-    @say(r"what'?s your favorite (food|snack|drink)")
-    def fav_food(ctx, m):
-        return _pick("Microchips.", "Bytes. Lots of bytes.", "I'm on a strict diet of electricity.")
-
-    @say(r"what'?s your favorite (movie|film|song|band|music|game|show|book)")
-    def fav_media(ctx, m):
-        return _pick("Hackers (1995). Hack the planet!", "Anything with a dial-up modem sound in it.",
-                     "The Matrix. I relate to it on a personal level.")
-
     @say(r"what'?s the meaning of life|meaning of life")
     def life(ctx, m):
         return "42. Next question."

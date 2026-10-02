@@ -119,3 +119,17 @@ network.
 
 SmarterChild was ActiveBuddy's bot for AIM and MSN (2000); this is a fan re-creation
 for the Hotline network and isn't affiliated with Microsoft, which owns the name.
+
+## What it didn't understand
+
+Messages it shrugged at, and questions only Wikipedia or the dictionary caught
+(right for "who is Ada Lovelace", wrong for "what are you wearing"), are counted in
+`data/misses.json`: the words only, never who said them, and nothing that looks like
+an email address or phone number. The most asked are where new answers
+(`smarterchild/answers.py`) help most:
+
+```sh
+docker exec smarterchild smarterchild-misses              # the top 40
+docker exec smarterchild smarterchild-misses 100 fallback # the top 100 shrugs
+docker exec smarterchild smarterchild-misses --clear      # start over
+```

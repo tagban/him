@@ -11,11 +11,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from .misses import Misses
 from .store import Memory, Store
 
 Reply = "str | list[str] | None"
 Handler = Callable[["Ctx", re.Match], Awaitable[Reply]]
 ModeHandler = Callable[["Ctx"], Awaitable[Reply]]
+
+# The catch-all lookups: a question only they caught ("what are you wearing") is noted as a
+# possible miss, unless the person asked for a lookup in so many words.
+LOOKUPS = {"wiki", "define"}
+ASKED_TO_LOOK_UP = re.compile(r"(?:define|definition|dictionary|wiki|wikipedia|look up|search|tell me about)\b", re.I)
 
 QUIT = {"quit", "stop", "exit", "cancel", "nevermind", "never mind", "done", "q", "menu", "help"}
 
@@ -88,6 +94,7 @@ class Brain:
                       "https://github.com/tagban/him/releases and add \"smarterchild\" on VesperNet.")
         self.memory = Memory(data)
         self.reminders = Store(data / "reminders.json", [])
+        self.misses = Misses(data)
         self.skills: list[Skill] = []
         self.modes: dict[str, Mode] = {}
         # Sends a message later (reminders); the bot sets it once it's signed on.
@@ -131,16 +138,21 @@ class Brain:
                     return [random.choice(["OK, we can stop there.", "Done. What next?", "Game over, then!"])]
             else:
                 reply = await mode.handler(ctx)
+        in_mode = reply is not None
         if reply is None:
             for s in self.skills:
                 m = s.pattern.fullmatch(ctx.text)
                 if m:
                     reply = await s.handler(ctx, m)
                     if reply is not None:
+                        if s.handler.__name__ in LOOKUPS and not ASKED_TO_LOOK_UP.match(ctx.text):
+                            self.misses.record(ctx.text, "lookup", room)
                         break
         if reply is None:
             from .personality import fallback
             reply = fallback(ctx)
+            if not in_mode:
+                self.misses.record(ctx.text, "fallback", room)
         out = [reply] if isinstance(reply, str) else list(reply)
         if room:
             mode = self.modes.get(login.lower())

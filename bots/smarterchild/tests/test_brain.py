@@ -273,3 +273,18 @@ def test_trivia_score_and_leaderboard(brain):
 def test_odoyle_is_in_the_rotation():
     from smarterchild.personality import FALLBACK
     assert any("O'DOYLE RULES" in f for f in FALLBACK)
+
+
+def test_what_it_doesnt_understand_is_kept(tmp_path):
+    from smarterchild.misses import Misses
+
+    b = Brain(tmp_path)
+    run = lambda text, who="kim": asyncio.run(b.answer(who, text))
+    run("blorp the snorgle")
+    run("Blorp the snorgle!", who="lee")
+    run("define ennui")                      # asked for a lookup: not a miss
+    run("my email is kim@example.com zzz")   # looks personal: not kept
+    run("what is 6*7")                       # answered: not a miss
+    top = Misses(tmp_path).top()
+    assert [(e["text"].lower(), e["kind"], e["count"]) for e in top] == [("blorp the snorgle", "fallback", 2)]
+    assert "kim" not in str(Misses(tmp_path).store.data) and "lee" not in str(Misses(tmp_path).store.data)

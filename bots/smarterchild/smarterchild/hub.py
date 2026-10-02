@@ -44,12 +44,16 @@ RELAYED = re.compile(r"^(Discord|Web)\s*\|\s*(.{1,40}?):\s+(.*)$", re.S)
 NATURAL = re.compile(r"(?:what'?s |how'?s )?(?:the )?(?:weather|forecast)(?: like)? (?:in|for|at) .{2,60}", re.I)
 
 
+# Commands another bot in the room answers (The Translator): SmarterChild stays quiet.
+OTHERS = {"translate", "tr", "translator"}
+
+
 def command(text: str, trigger: str = "!") -> str | None:
     """The question in a "!command args" line, with short names spelled out; else None."""
     if not trigger or not text.startswith(trigger) or len(text) <= len(trigger):
         return None
     word, _, rest = text[len(trigger):].strip().partition(" ")
-    if not word:
+    if not word or word.lower() in OTHERS:
         return None
     w = word.lower()
     if w in COMMANDS:

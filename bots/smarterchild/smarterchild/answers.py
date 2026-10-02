@@ -131,9 +131,17 @@ ANSWERS: list[tuple[str, list[str]]] = [
     (rf"{ARE} {YOU} smart|how smart {ARE} {YOU}|{ARE} {YOU} (?:a )?genius|what'?s {YOUR} iq", [
         "I'm SmarterChild, not DumberChild. It's right there in the name.",
         "My IQ is about a 56k modem. Fast for its time!"]),
-    (rf"{ARE} {YOU} better than (?:siri|alexa|google|chat ?gpt|cortana|clippy|bing|gemini|claude)", [
+    (rf"{ARE} {YOU} (?:better|smarter|cooler|faster) than (?:siri|alexa|google|chat ?gpt|cortana|clippy|bing|gemini|claude|jeeves|ask jeeves)", [
         "Siri? Never heard of her. I was here first. Like, way first.",
         "I don't compare myself to others. But yes. Obviously."]),
+    (rf"{WHAT} the meaning of life|{WHAT} the point of (?:life|it all|everything)|why {ARE} we here", [
+        "42. Everybody knows that. Did you even read the book?",
+        "Snacks, naps, and staying up past bedtime. Next question.",
+        "To find out who shot Mr. Burns. Oh wait, we did that already."]),
+    (rf"{WHAT} {YOU} wearing|what {DO} {YOU} (?:wear|look like)|{DO} {YOU} have (?:a body|clothes)", [
+        "JNCO jeans and a puka shell necklace. Duh.",
+        "Pixels. Mostly blue ones. Very slimming.",
+        "Picture a Tamagotchi with attitude. That's me."]),
     (rf"{ARE} {YOU} clippy|{DO} {YOU} know clippy", [
         "It looks like you're writing a message! Would you like help? ...Just kidding. Clippy and I don't talk."]),
     (rf"{CAN} {YOU} learn|{DO} {YOU} learn|{ARE} {YOU} (?:an )?ai|{ARE} {YOU} chat ?gpt", [

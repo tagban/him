@@ -49,7 +49,9 @@ You can clear a conversation from a buddy's Info, and removing HIM removes the r
 
 - **Hotline trackers**, to list chat rooms: they see your connection, as any website would.
 - **hlwiki.com**, for the classic Hotline user icons shown in chat rooms.
-- **GitHub**, only if you use **Report**, which opens a page there in your browser.
+- **GitHub**: the HIM app for computers asks it once at startup whether a newer version of
+  HIM is out (only HIM's version number goes with the request), and **Report** opens a page
+  there in your browser.
 
 The BadassBuddy icons come with HIM; picking one contacts no one.
 

@@ -32,19 +32,56 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-/// Where files from buddies go: Downloads/HIM.
+/// Downloads/HIM: where files from buddies go unless Setup says otherwise.
+pub fn default_received_folder(app: &AppHandle) -> PathBuf {
+    app.path().download_dir().unwrap_or_else(|_| std::env::temp_dir()).join("HIM")
+}
+
+/// Where files from buddies go: the folder chosen in Setup, else Downloads/HIM.
 pub fn received_folder(app: &AppHandle) -> PathBuf {
     #[cfg(debug_assertions)]
     if let Ok(d) = std::env::var("HIM_RECEIVED_DIR") {
         return PathBuf::from(d); // test runs
     }
-    let dir = app
-        .path()
-        .download_dir()
-        .unwrap_or_else(|_| std::env::temp_dir())
-        .join("HIM");
+    let chosen = {
+        let st = app.state::<Mutex<App>>();
+        let a = st.lock().unwrap();
+        a.settings.prefs.download_dir.clone()
+    };
+    // A chosen folder that's gone (an unplugged drive, say) falls back to the default.
+    let dir = chosen.map(PathBuf::from).filter(|d| d.is_dir()).unwrap_or_else(|| default_received_folder(app));
     let _ = std::fs::create_dir_all(&dir);
     dir
+}
+
+/// Setup's "Received files" line: the folder in use, and whether it's the default.
+#[tauri::command]
+pub fn received_folder_info(app: AppHandle) -> (String, bool) {
+    let dir = received_folder(&app);
+    let default = dir == default_received_folder(&app);
+    (shown_path(&app, &dir), default)
+}
+
+/// A folder as people read it: "~/Downloads/HIM" rather than the whole home path.
+fn shown_path(app: &AppHandle, dir: &std::path::Path) -> String {
+    match app.path().home_dir().ok().and_then(|h| dir.strip_prefix(&h).ok().map(|r| r.to_path_buf())) {
+        Some(rest) => format!("~/{}", rest.to_string_lossy()),
+        None => dir.to_string_lossy().into_owned(),
+    }
+}
+
+/// Setup's Change...: a folder picker; returns the folder chosen (None if canceled).
+/// Setup saves it with the other preferences.
+#[tauri::command]
+pub async fn pick_received_folder(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .set_title("Save files from buddies in")
+        .set_directory(received_folder(&app))
+        .blocking_pick_folder()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 fn client(app: &AppHandle) -> Result<hotline_im::Client, String> {
@@ -235,7 +272,7 @@ fn shrink_picture(src: &Path) -> Option<(Vec<u8>, String)> {
 
 /// "Send File": pick a file and offer it.
 #[tauri::command]
-pub async fn send_file(app: AppHandle, login: String) -> Result<(), String> {
+pub async fn send_file(app: AppHandle, login: String, path: Option<String>) -> Result<(), String> {
     let online = {
         let st = app.state::<Mutex<App>>();
         let a = st.lock().unwrap();
@@ -246,10 +283,22 @@ pub async fn send_file(app: AppHandle, login: String) -> Result<(), String> {
     if !online {
         return Err("Files can only go to a buddy who's online.".into());
     }
-    let Some(picked) = app.dialog().file().set_title(format!("Send a File to {login}")).blocking_pick_file() else {
-        return Ok(());
+    // A file dropped on the IM window comes with its path; Send File asks for one.
+    let src = match path {
+        Some(p) => {
+            let p = std::path::PathBuf::from(p);
+            if !p.is_file() {
+                return Err("Only files can be sent (not folders).".into());
+            }
+            p
+        }
+        None => {
+            let Some(picked) = app.dialog().file().set_title(format!("Send a File to {login}")).blocking_pick_file() else {
+                return Ok(());
+            };
+            picked.into_path().map_err(|e| e.to_string())?
+        }
     };
-    let src = picked.into_path().map_err(|e| e.to_string())?;
     // A copy of our own, readable however long they take to answer.
     let outbox = {
         let st = app.state::<Mutex<App>>();

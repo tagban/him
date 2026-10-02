@@ -8,6 +8,7 @@ mod rooms;
 mod session;
 mod settings;
 mod sounds;
+mod updates;
 mod windows;
 
 use session::App;
@@ -127,6 +128,8 @@ fn main() {
                 .join(if testing { "settings.dev.json" } else { "settings.json" });
             app.manage(Mutex::new(App::new(path)));
             app.manage(Mutex::new(rooms::Rooms::default()));
+            app.manage(updates::UpdateState::default());
+            updates::check(app.handle().clone());
             #[cfg(debug_assertions)]
             dev_script(app.handle().clone());
             Ok(())
@@ -161,6 +164,8 @@ fn main() {
             session::delete_group,
             session::move_buddy,
             files::send_file,
+            files::received_folder_info,
+            files::pick_received_folder,
             files::accept_file,
             files::decline_file,
             files::open_file,
@@ -182,6 +187,8 @@ fn main() {
             icons::gallery_is_builtin,
             icons::gallery_forget,
             icons::open_signup,
+            icons::open_link,
+            updates::update_available,
             icons::log_ui,
             icons::gallery_list,
             icons::gallery_image,

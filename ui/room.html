@@ -27,6 +27,7 @@
   .compose { flex: none; display: flex; gap: 4px; align-items: stretch; }
   .compose textarea { flex: 1; height: 42px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
   .compose .sendbtn { width: 64px; min-width: 0; font-weight: bold; }
+  .convo .via { color: #808080; font-size: 0.9em; }
 </style>
 </head>
 <body>
@@ -81,7 +82,7 @@
     if (l.name && ignored.has(l.name) && (l.kind === 'chat' || l.kind === 'pm')) return '';
     const ts = prefs.timestamps ? `<span class="ts">(${esc(fmtTime(l.ts))}) </span>` : '';
     switch (l.kind) {
-      case 'chat': return `<div class="ln${l.mine ? ' mine' : ''}">${ts}<span class="who">${esc(l.name)}:</span> ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
+      case 'chat': return `<div class="ln${l.mine ? ' mine' : ''}">${ts}<span class="who">${esc(l.name)}:</span> ${Smileys.html(l.text, prefs.smileys !== false)}${l.via ? ` <span class="via">(via ${esc(l.via)})</span>` : ''}</div>`;
       case 'emote': return `<div class="ln emote">${ts}* ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
       case 'pm': return `<div class="ln pm">${ts}<b>Private message from ${esc(l.name)}:</b> ${Smileys.html(l.text, prefs.smileys !== false)}</div>`;
       default: return `<div class="ln ${esc(l.kind)}">${ts}${esc(l.text)}</div>`;
@@ -129,7 +130,7 @@
     const text = t.value.replace(/\s+$/, '');
     if (!text.trim()) return;
     t.value = '';
-    invoke('room_send', { id, text }).catch(e => { t.value = text; alertBox(String(e)); });
+    invoke('room_send', { id, text }).then(() => Sound.chatSend()).catch(e => { t.value = text; alertBox(String(e)); });
     t.focus();
   }
 
@@ -165,6 +166,7 @@
 
   (async () => {
     prefs = (await invoke('get_settings')).prefs;
+    loadSoundPref();   // the sound-on/off switch and any custom sounds
     R = await invoke('get_room', { id });
     if (!R) { await alertBox('That room is closed.'); return thisWindow.close(); }
     renderAll();

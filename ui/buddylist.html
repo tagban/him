@@ -64,6 +64,7 @@
     </div>
   </div>
   <div class="me" id="me"></div>
+  <div class="update" id="update" hidden></div>
   <div class="tabs">
     <div class="tab active" data-tab="online">Online</div>
     <div class="tab" data-tab="setup">List Setup</div>
@@ -97,6 +98,7 @@
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
 
   setupWindow({ title: 'Buddy List', onClose: signOff });
+  updateNotice($('#update'));
   $('#b-im').innerHTML = ICON.im + 'IM';
   $('#b-chat').innerHTML = ICON.chat + 'Chat';
   $('#b-info').innerHTML = ICON.info + 'Info';

@@ -7,6 +7,7 @@
 <style>
   .convo { flex: 1; min-height: 60px; padding: 4px 5px; font-family: Arial, Helvetica, sans-serif; font-size: 12px; -webkit-user-select: text; user-select: text; cursor: text; line-height: 1.3; }
   .convo .ln { margin: 0 0 1px; white-space: pre-wrap; word-wrap: break-word; }
+  body.dropping .convo { outline: 2px dashed var(--select); outline-offset: -3px; }
   .convo .who { font-weight: bold; }
   .convo .me { color: var(--me); }
   .convo .them { color: var(--them); }
@@ -24,10 +25,10 @@
   .fmt .count.over { color: #c00000; font-weight: bold; }
   .composerow { flex: none; display: flex; gap: 4px; }
   .entry { flex: 1; min-width: 0; height: 64px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
-  .myicon { display: none; width: 56px; height: 64px; flex: none; place-items: center; background: #e9e9e9;
-    box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow), inset -2px -2px var(--light), inset 2px 2px var(--dark); }
-  .myicon.on { display: grid; }
-  .myicon img { width: 48px; height: 48px; }
+  /* Their Buddy Icon: the lower-left corner, no frame, right on the window's gray (as AIM had it) */
+  .buddyicon { display: none; width: 48px; height: 48px; flex: none; margin: 0 6px 0 2px; align-self: flex-end; }
+  .buddyicon.on { display: block; }
+  .buddyicon img { width: 48px; height: 48px; display: block; }
   .bottom { flex: none; display: flex; align-items: flex-end; gap: 2px; padding-top: 3px; }
   .bottom .ibtn { width: 48px; }
   .filebox { display: inline-flex; gap: 6px; align-items: flex-start; margin: 2px 0 2px 4px; padding: 4px 6px; background: #f4f4f4; border: 1px solid #a0a0a0; vertical-align: top; max-width: 260px; }
@@ -63,11 +64,10 @@
       <span class="count" id="count"></span>
     </div>
     <div class="composerow">
-      <div class="myicon" id="theiricon"></div>
       <textarea class="entry" id="entry" spellcheck="true"></textarea>
-      <div class="myicon" id="myicon" title="Your Buddy Icon (My HIM > Buddy Icon)"></div>
     </div>
     <div class="bottom">
+      <div class="buddyicon" id="theiricon"></div>
       <button class="ibtn" id="b-block" title="Block this person"></button>
       <button class="ibtn" id="b-add" title="Add to your Buddy List"></button>
       <button class="ibtn" id="b-info" title="Get their info"></button>
@@ -97,6 +97,17 @@
     catch (e) { setStatus(`<span class="failed">${esc(String(e))}</span>`, 8000); }
   };
   $('#b-send').innerHTML = ICON.send + 'Send';
+
+  // Drop pictures or files on the window to send them (Send File without the picker).
+  T.webview.getCurrentWebview().onDragDropEvent(async e => {
+    const p = e.payload;
+    document.body.classList.toggle('dropping', p.type === 'enter' || p.type === 'over');
+    if (p.type !== 'drop') return;
+    for (const path of p.paths || []) {
+      try { await invoke('send_file', { login, path }); }
+      catch (err) { setStatus(`<span class="failed">${esc(String(err))}</span>`, 8000); }
+    }
+  });
 
   setupMenus([
     { title: 'File', items: [
@@ -136,7 +147,7 @@
       case 'offered': what = 'is waiting for them to accept'; buttons = `<button data-act="decline" data-g="${g}">Cancel</button>`; break;
       case 'starting': what = 'starting'; break;
       case 'moving': what = `${Math.round((f.progress || 0) * 100)}%`; break;
-      case 'done': what = mine ? 'sent' : 'saved to Downloads/HIM'; if (!mine && f.path) buttons = `<button data-act="open" data-p="${p}">Open</button><button data-act="reveal" data-p="${p}">Show</button>`; break;
+      case 'done': what = mine ? 'sent' : 'saved'; if (!mine && f.path) buttons = `<button data-act="open" data-p="${p}">Open</button><button data-act="reveal" data-p="${p}">Show</button>`; break;
       case 'declined': what = mine ? 'not taken' : 'declined'; break;
       case 'failed': what = `didn't go${f.error ? ': ' + esc(f.error) : ''}`; break;
     }
@@ -386,20 +397,7 @@
     showTheirIcon();
     if (!lastStatus) showPresence();
   });
-  listen('prefs', e => { if (C) { C.prefs = e.payload; renderAll(); } showMyIcon(e.payload); });
-
-  let iconUrl = null;
-  async function showMyIcon(prefs) {
-    const box = $('#myicon');
-    if (!prefs?.buddyIcon) { box.classList.remove('on'); box.innerHTML = ''; return; }
-    try {
-      const bytes = await invoke('icon_data');
-      if (iconUrl) URL.revokeObjectURL(iconUrl);
-      iconUrl = URL.createObjectURL(new Blob([bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes)]));
-      box.innerHTML = `<img src="${iconUrl}" alt="">`;
-      box.classList.add('on');
-    } catch { box.classList.remove('on'); }
-  }
+  listen('prefs', e => { if (C) { C.prefs = e.payload; renderAll(); } });
 
   // Their Buddy Icon sits in the lower-left, the way AIM showed it. Fetched only
   // when their icon's hash changes; the backend keeps a cache by hash.
@@ -434,7 +432,6 @@
     await loadSoundPref();
     C = await invoke('get_conversation', { login });
     size = C.prefs.fontSize || 12;
-    showMyIcon(C.prefs);
     showTheirIcon();
     renderAll();
     showPresence();

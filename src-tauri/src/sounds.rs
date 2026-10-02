@@ -1,6 +1,6 @@
-//! Custom sounds: the user picks their own files (say, the classic door sounds
-//! from an old install they own) for each event. HIM ships only its own
-//! synthesized sounds; a picked file is copied into the app's sounds folder.
+//! Custom sounds: the user picks their own file for an event, in place of the
+//! classic recordings HIM comes with (ui/sounds). A picked file is copied into the
+//! app's sounds folder.
 
 use crate::session::App;
 use std::path::PathBuf;

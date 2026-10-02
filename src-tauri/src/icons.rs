@@ -196,6 +196,11 @@ fn bundled_folder(app: &AppHandle) -> Option<PathBuf> {
     if let Ok(r) = app.path().resource_dir() {
         places.push(r.join("badassbuddy"));
     }
+    // Linux packages: the .deb puts resources in /usr/lib/HIM, the Flatpak in /app/lib/HIM
+    // (beside the program's bin folder, which Tauri's lookup doesn't know for Flatpak).
+    if let Some(bin) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+        places.push(bin.join("../lib/HIM/badassbuddy"));
+    }
     // Debug runs (cargo run) read it straight from the repo.
     if cfg!(debug_assertions) {
         places.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../icons/badassbuddy"));
@@ -680,6 +685,18 @@ pub fn log_ui(app: AppHandle, text: String) {
 pub fn open_icon_site(app: AppHandle, url: String) -> Result<(), String> {
     if !ICON_SITES.contains(&url.as_str()) {
         return Err("HIM only opens the icon sites it knows.".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// A link someone sent in chat, opened in the browser. Web addresses only.
+#[tauri::command]
+pub fn open_link(app: AppHandle, url: String) -> Result<(), String> {
+    let lower = url.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) || url.chars().any(char::is_whitespace) {
+        return Err("HIM only opens web links.".into());
     }
     app.opener()
         .open_url(url, None::<&str>)

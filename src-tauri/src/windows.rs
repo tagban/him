@@ -118,7 +118,7 @@ pub async fn open_dialog(app: AppHandle, kind: String, arg: Option<String>) {
         "addbuddy" => (300.0, 220.0, "Add Buddy"),
         "info" => (300.0, 330.0, "Buddy Info"),
         "away" => (340.0, 300.0, "Away Message"),
-        "setup" => (380.0, 522.0, "Setup"),
+        "setup" => (380.0, 578.0, "Setup"),
         "request" => (300.0, 190.0, "Buddy Request"),
         "profile" => (330.0, 380.0, "Edit Profile"),
         "find" => (320.0, 300.0, "Find a Buddy"),

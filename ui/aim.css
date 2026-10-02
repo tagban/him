@@ -2,9 +2,9 @@
    Colors are the classic Windows 3D palette. */
 
 :root {
-  --face: #c0c0c0;
+  --face: #e9e9e9;   /* the light gray Buddy Icons were drawn for, so they sit in the window */
   --hilite: #ffffff;
-  --light: #dfdfdf;
+  --light: #f6f6f6;
   --shadow: #808080;
   --dark: #0a0a0a;
   --title-a: #000080;
@@ -188,12 +188,14 @@ input[type=radio]:checked::after { content: ""; position: absolute; left: 4px; t
 
 fieldset {
   border: none;
+  min-width: 0;   /* let long contents shrink (a fieldset won't, by default) */
   margin: 4px 0;
   padding: 10px 8px 8px;
   box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow),
               inset -2px -2px var(--shadow), inset 2px 2px var(--hilite);
 }
-legend { padding: 0 3px; }
+/* the title sits on the group's line, hiding it behind the letters (as Windows did) */
+legend { padding: 0 3px; background: var(--face); position: relative; }
 
 .groove { height: 2px; border-top: 1px solid var(--shadow); border-bottom: 1px solid var(--hilite); margin: 4px 0; }
 
@@ -309,3 +311,6 @@ img.smiley { height: 1.5em; width: auto; vertical-align: -0.38em; }
 .grow { flex: 1; }
 
 .dlg-icon { width: 32px; height: 32px; flex: none; }
+
+/* the update notice: one quiet line */
+.update { flex: none; padding: 2px 8px; font-size: 10px; background: #ffffe1; border-bottom: 1px solid var(--shadow); color: #000; }

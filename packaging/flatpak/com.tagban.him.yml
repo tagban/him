@@ -27,6 +27,8 @@ modules:
       - ar -x him.deb
       - tar -xf data.tar.*
       - install -Dm755 usr/bin/him /app/bin/him
+      # The app's resources (the BadassBuddy icon collection, the sounds)
+      - mkdir -p /app/lib && cp -R usr/lib/HIM /app/lib/HIM
       - install -Dm644 usr/share/applications/*.desktop /app/share/applications/com.tagban.him.desktop
       - sed -i -e 's/^Icon=.*/Icon=com.tagban.him/' -e 's/^Exec=.*/Exec=him/' /app/share/applications/com.tagban.him.desktop
       - |

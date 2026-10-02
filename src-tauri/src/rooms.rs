@@ -25,6 +25,34 @@ pub struct RoomLine {
     pub text: String,
     pub ts: u64,
     pub mine: bool,
+    /// A bridge bot that carried this line from elsewhere (Discord): `name` is then the
+    /// person who wrote it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+}
+
+/// Bridge bots that post other people's words as "Name: text", by server (address,
+/// or a word in its name): MacDomain's Discord bridge, and the Hub's Relay.
+const RELAYS: &[(&str, &str)] = &[
+    ("62.116.228.143", "Discord"),
+    ("macdomain", "Discord"),
+    ("74.208.191.206", "Relay"),
+    ("hotline central hub", "Relay"),
+];
+
+/// "Discord: Tagban: lol" on MacDomain is Tagban's "lol", via Discord.
+fn unwrap_relay(host: &str, title: &str, name: &str, text: &str) -> Option<(String, String, String)> {
+    let title = title.to_lowercase();
+    let bot = RELAYS
+        .iter()
+        .find(|(server, bot)| (host.eq_ignore_ascii_case(server) || title.contains(server)) && name.eq_ignore_ascii_case(bot))?
+        .1;
+    let (who, said) = text.split_once(": ")?;
+    let who = who.trim();
+    if who.is_empty() || who.chars().count() > 64 || who.contains(':') {
+        return None;
+    }
+    Some((who.to_string(), said.to_string(), bot.to_string()))
 }
 
 pub struct Room {
@@ -353,12 +381,18 @@ async fn load_history(app: &AppHandle, id: &str, epoch: u64, client: &Client) {
                 } else {
                     ("chat", e.nick.clone(), e.text.clone())
                 };
+                let mine = name == room.nick;
+                let (name, text, via) = match unwrap_relay(&room.host, &room.title, &name, &text) {
+                    Some((who, said, bot)) if kind == "chat" => (who, said, Some(bot)),
+                    _ => (name, text, None),
+                };
                 RoomLine {
                     kind: kind.into(),
-                    mine: name == room.nick,
+                    mine,
                     name,
                     text,
                     ts: e.timestamp.max(0) as u64,
+                    via,
                 }
             })
             .collect();
@@ -511,12 +545,18 @@ fn parse_chat(raw: &str) -> (&'static str, String, String) {
 }
 
 fn push(room: &mut Room, kind: &str, name: &str, text: &str, mine: bool) {
+    let relayed = if kind == "chat" { unwrap_relay(&room.host, &room.title, name, text) } else { None };
+    let (name, text, via) = match relayed {
+        Some((who, said, bot)) => (who, said, Some(bot)),
+        None => (name.to_string(), text.to_string(), None),
+    };
     room.lines.push(RoomLine {
         kind: kind.into(),
-        name: name.into(),
-        text: text.into(),
+        name,
+        text,
         ts: now(),
         mine,
+        via,
     });
     if room.lines.len() > MAX_LINES {
         let cut = room.lines.len() - MAX_LINES;
@@ -642,6 +682,23 @@ pub async fn rejoin_room(app: AppHandle, id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::parse_chat;
+
+    #[test]
+    fn bridge_bots_pass_on_the_real_sender() {
+        use super::unwrap_relay;
+        assert_eq!(
+            unwrap_relay("62.116.228.143", "MacDomain", "Discord", "Tagban: lol"),
+            Some(("Tagban".into(), "lol".into(), "Discord".into()))
+        );
+        assert_eq!(
+            unwrap_relay("hub.example.com", "Hotline Central Hub", "Relay", "Pat: time: 5pm"),
+            Some(("Pat".into(), "time: 5pm".into(), "Relay".into()))
+        );
+        // Someone else called Discord, elsewhere, or a line that isn't "Name: text"
+        assert_eq!(unwrap_relay("10.0.0.1", "Elsewhere", "Discord", "Tagban: lol"), None);
+        assert_eq!(unwrap_relay("62.116.228.143", "MacDomain", "Tagban", "Pat: hi"), None);
+        assert_eq!(unwrap_relay("62.116.228.143", "MacDomain", "Discord", "just talking"), None);
+    }
 
     #[test]
     fn classic_chat_lines() {

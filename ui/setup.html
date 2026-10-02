@@ -25,8 +25,13 @@
     </fieldset>
     <fieldset>
       <legend>Sounds</legend>
-      <div class="hint" style="font-size:10px;margin-bottom:4px">HIM has its own door and message sounds. To use others (the classic ones from an old install, say), choose a file for each.</div>
+      <div class="hint" style="font-size:10px;margin-bottom:4px">HIM plays the classic door and message sounds. To use others, choose a file for each.</div>
       <div id="soundlist"></div>
+    </fieldset>
+    <fieldset>
+      <legend>Received files</legend>
+      <div class="snd"><span class="what">Save files in</span><span class="file" id="dlpath"></span>
+        <button id="dlpick">Change...</button><button id="dldefault">Default</button></div>
     </fieldset>
     <fieldset>
       <legend>Away</legend>
@@ -52,10 +57,25 @@
     $('#auto').checked = p.autoResponse;
     $('#disc').checked = p.discoverable;
     $('#size').value = String(p.fontSize);
+    // Received files: undefined = unchanged, null = back to Downloads/HIM, or a folder.
+    let downloadDir;
+    const [inUse, isDefault] = await invoke('received_folder_info');
+    const showDir = (path, dflt) => {
+      $('#dlpath').textContent = path;
+      $('#dlpath').title = path;
+      $('#dldefault').disabled = dflt;
+    };
+    showDir(inUse, isDefault);
+    $('#dlpick').onclick = async () => {
+      const picked = await invoke('pick_received_folder');
+      if (picked) { downloadDir = picked; showDir(picked.replace(/^\/(Users|home)\/[^/]+/, '~'), false); }
+    };
+    $('#dldefault').onclick = () => { downloadDir = null; showDir('~/Downloads/HIM', true); };
     $('#ok').onclick = async () => {
       try {
         // Re-read first: sound picks save on their own while this window is open.
         const cur = (await invoke('get_settings')).prefs;
+        if (downloadDir !== undefined) cur.downloadDir = downloadDir;
         await invoke('save_prefs', { prefs: { ...cur, sounds: $('#sounds').checked, timestamps: $('#timestamps').checked, smileys: $('#smileys').checked, autoResponse: $('#auto').checked, discoverable: $('#disc').checked, fontSize: +$('#size').value } });
         thisWindow.close();
       } catch (e) { $('#err').textContent = String(e); }
@@ -68,7 +88,7 @@
     const cs = p.customSounds || {};
     $('#soundlist').innerHTML = EVENTS.map(([k, label]) => {
       const f = cs[k] ? cs[k].split('|')[1] || cs[k] : '';
-      return `<div class="snd" data-k="${k}"><span class="what">${label}</span><span class="file" title="${esc(f)}">${f ? esc(f) : '<i>HIM sound</i>'}</span>` +
+      return `<div class="snd" data-k="${k}"><span class="what">${label}</span><span class="file" title="${esc(f)}">${f ? esc(f) : '<i>Classic sound</i>'}</span>` +
         `<button class="play" title="Play">▶</button><button class="pick">Choose...</button><button class="clear"${f ? '' : ' disabled'}>Default</button></div>`;
     }).join('');
     $$('.snd').forEach(row => {

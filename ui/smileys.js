@@ -50,18 +50,45 @@ const Smileys = (() => {
     return `<img class="smiley" src="${s.src}" alt="${esc(code)}" title="${esc(s.name)}  ${esc(code)}">`;
   }
 
+  const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+
+  function link(url) {
+    const href = /^www\./i.test(url) ? 'https://' + url : url;
+    return `<a class="url" href="#" data-url="${esc(href)}" title="${esc(href)}">${esc(url)}</a>`;
+  }
+
+  function faces(text, on) {
+    if (!on) return esc(text);
+    let out = '', last = 0, m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text))) {
+      const start = m.index + m[1].length;
+      out += esc(text.slice(last, start)) + img(m[2]);
+      last = start + m[2].length;
+    }
+    return out + esc(text.slice(last));
+  }
+
   return {
-    /// Plain text to safe HTML, with smiley codes drawn as pictures.
+    /// Plain text to safe HTML: web addresses become links (found first, so the ":/" in
+    /// "http://" isn't taken for a smiley), and smiley codes are drawn as pictures.
     html(text, on = true) {
-      if (!on) return esc(text);
-      let out = '', last = 0, m;
-      re.lastIndex = 0;
-      while ((m = re.exec(text))) {
-        const start = m.index + m[1].length;
-        out += esc(text.slice(last, start)) + img(m[2]);
-        last = start + m[2].length;
+      let out = '', last = 0, u;
+      URL_RE.lastIndex = 0;
+      while ((u = URL_RE.exec(text))) {
+        let url = u[0];
+        // Punctuation that ends a sentence isn't part of the address.
+        for (;;) {
+          const c = url.slice(-1);
+          const opens = url.split('(').length, closes = url.split(')').length;
+          if (/[.,;:!?'"\]]/.test(c) || (c === ')' && closes > opens)) url = url.slice(0, -1);
+          else break;
+        }
+        out += faces(text.slice(last, u.index), on) + link(url);
+        last = u.index + url.length;
+        URL_RE.lastIndex = last;
       }
-      return out + esc(text.slice(last));
+      return out + faces(text.slice(last), on);
     },
     /// The picker: [name, code to insert, picture url] per smiley.
     list: SET.map(([name, codes, svg]) => [name, codes[0], url(svg)]),

@@ -157,7 +157,7 @@ function confirmBox(text, { yes = 'Yes', no = 'No', icon = 'question', title = '
   });
 }
 
-// ---------- sounds (synthesized; no recordings are shipped) ----------
+// ---------- sounds: the classic recordings (ui/sounds), the user's own, or synthesized ----------
 
 const Sound = (() => {
   let ctx;
@@ -220,15 +220,40 @@ const Sound = (() => {
     return true;
   }
 
+  // The recordings that come with HIM; a room line you send sounds like an IM you send.
+  const builtIn = new Map();
+  const builtInFiles = { buddyIn: 'sounds/buddy-in.wav', buddyOut: 'sounds/buddy-out.wav', imSend: 'sounds/im.mp3', imReceive: 'sounds/im-receive.mp3', chatSend: 'sounds/im.mp3' };
+  async function loadBuiltIn() {
+    for (const [kind, file] of Object.entries(builtInFiles)) {
+      try {
+        const r = await fetch(file);
+        builtIn.set(kind, await ac().decodeAudioData(await r.arrayBuffer()));
+      } catch {}
+    }
+  }
+  loadBuiltIn();
+  /// The user's file first, then the recording; false if neither (the synthesized one plays).
+  function playFile(kind) {
+    if (playCustom(kind)) return true;
+    const buf = builtIn.get(kind);
+    if (!buf) return false;
+    const src = ac().createBufferSource();
+    src.buffer = buf;
+    src.connect(ac().destination);
+    src.start();
+    return true;
+  }
+
   let enabled = true;
   return {
     set enabled(v) { enabled = v; },
     get enabled() { return enabled; },
     loadCustom,
-    doorOpen() { if (!enabled || playCustom('buddyIn')) return; creak(0, 0.42, 190, 430); thud(0.36, 0.25); },
-    doorClose() { if (!enabled || playCustom('buddyOut')) return; creak(0, 0.22, 380, 210, 0.09); thud(0.2, 0.55); },
-    imReceive() { if (!enabled || playCustom('imReceive')) return; tone(1318, 0, 0.09, { gain: 0.16, to: 1100 }); tone(880, 0.1, 0.16, { gain: 0.16, to: 700 }); },
-    imSend() { if (!enabled || playCustom('imSend')) return; tone(660, 0, 0.06, { type: 'triangle', gain: 0.12, to: 990 }); },
+    doorOpen() { if (!enabled || playFile('buddyIn')) return; creak(0, 0.42, 190, 430); thud(0.36, 0.25); },
+    doorClose() { if (!enabled || playFile('buddyOut')) return; creak(0, 0.22, 380, 210, 0.09); thud(0.2, 0.55); },
+    imReceive() { if (!enabled || playFile('imReceive')) return; tone(1318, 0, 0.09, { gain: 0.16, to: 1100 }); tone(880, 0.1, 0.16, { gain: 0.16, to: 700 }); },
+    imSend() { if (!enabled || playFile('imSend')) return; tone(660, 0, 0.06, { type: 'triangle', gain: 0.12, to: 990 }); },
+    chatSend() { if (!enabled || playFile('chatSend')) return; tone(660, 0, 0.06, { type: 'triangle', gain: 0.12, to: 990 }); },
     alert() { if (!enabled) return; tone(988, 0, 0.12, { type: 'square', gain: 0.05 }); tone(784, 0.13, 0.18, { type: 'square', gain: 0.05 }); },
     /// Setup's "Play" buttons: the sound for an event, ignoring the on/off switch.
     preview(kind) {
@@ -253,3 +278,25 @@ function fmtTime(ts) {
 }
 
 function utf8Len(s) { return new TextEncoder().encode(s).length; }
+
+// Links (a.url, in chat lines and notices) open in the browser; HIM's windows never navigate.
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a.url');
+  if (!a) return;
+  e.preventDefault();
+  invoke('open_link', { url: a.dataset.url }).catch(() => {});
+});
+
+// ---------- "a newer HIM is out" (the startup update check, src-tauri/src/updates.rs) ----------
+
+/// Puts a one-line notice into `el` when a newer release exists, with a link to it.
+function updateNotice(el) {
+  if (!el) return;
+  const show = u => {
+    if (!u) return;
+    el.innerHTML = `HIM ${esc(u.version)} is out. <a class="url" href="#" data-url="${esc(u.url)}">Download</a>`;
+    el.hidden = false;
+  };
+  invoke('update_available').then(show).catch(() => {});
+  listen('update', e => show(e.payload));
+}

@@ -110,6 +110,8 @@ pub struct Prefs {
     pub buddy_icon: Option<String>,
     /// A zip of icons you opened (say, BadassBuddy's collection), to browse again.
     pub icon_gallery: Option<String>,
+    /// Where files from buddies are saved; None is Downloads/HIM.
+    pub download_dir: Option<String>,
 }
 
 impl Default for Prefs {
@@ -124,6 +126,7 @@ impl Default for Prefs {
             custom_sounds: HashMap::new(),
             buddy_icon: None,
             icon_gallery: None,
+            download_dir: None,
         }
     }
 }

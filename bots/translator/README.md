@@ -25,9 +25,13 @@ answers only `!translate` (or `!tr`) lines, including ones the Discord bridge re
 
 Private messages to it on the Hub are answered like IMs.
 
-The translating is done by [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
-(open source), running on the same server; messages aren't sent to any outside
-service. It runs from SmarterChild's code (`../smarterchild`, the `translator` command).
+The translating is done by Google Translate's free endpoint (the one its Chrome extension
+uses; no account or key). It's unofficial, so Google could change or limit it. With a
+[LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) server of your own
+(it wants 2 to 4 GB of memory), set `TRANSLATE_ENGINE=libre` and `TRANSLATE_URL` in `.env`.
+What people send it goes to Google to be translated.
+
+It runs from SmarterChild's code (`../smarterchild`, the `translator` command).
 
 ## Running it
 
@@ -36,8 +40,3 @@ cp .env.example .env    # then fill in the password
 docker compose up -d --build
 docker compose logs -f
 ```
-
-The first start downloads the language models (a few GB, into a Docker volume), which
-takes a while; until then the bot says its dictionary is stuck. LibreTranslate
-wants roughly 2 to 4 GB of memory with the default 20 languages: trim
-`LT_LOAD_ONLY` in `.env` on a small server.

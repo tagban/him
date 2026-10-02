@@ -2,8 +2,8 @@
 answers in English (or your language); start a message with a language, like
 "english: ¿dónde está la biblioteca?" or "spanish: where is the library?", to choose.
 
-The translating is done by LibreTranslate (open source, no outside service), which runs
-beside the bot (see bots/translator/docker-compose.yml).
+The translating is done by Google Translate's free web endpoint (no account or key; it's
+unofficial, so Google could change or limit it), or by a LibreTranslate server of your own.
 
 Settings, from the environment (or a .env file):
   HOTLINE_HOST, HOTLINE_PORT          the server, default hotline.vespernet.net:5500
@@ -11,8 +11,9 @@ Settings, from the environment (or a .env file):
   TRANSLATOR_NAME     the name buddies see, default The Translator
   TRANSLATOR_STATUS   its status line, default: Say it in any language!
   TRANSLATOR_DATA     where each person's language is kept, default ./data
-  TRANSLATE_URL       LibreTranslate, default http://libretranslate:5000
-  TRANSLATE_KEY       its API key, if it wants one
+  TRANSLATE_ENGINE    google (default) or libre
+  TRANSLATE_URL       for libre: the LibreTranslate server, e.g. http://libretranslate:5000
+  TRANSLATE_KEY       for libre: its API key, if it wants one
 
 And in a server's public chat, where it answers "!translate" (leave HUB_HOST empty to stay out):
   HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500. Several
@@ -31,6 +32,7 @@ import os
 import random
 import re
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Protocol
@@ -99,6 +101,55 @@ class Libre:
         r = await asyncio.to_thread(self._call, "/translate",
                                     {"q": text, "source": "auto", "target": target, "format": "text"})
         return r["translatedText"], (r.get("detectedLanguage") or {}).get("language", "")
+
+
+# Google Translate's languages (its codes). Names as people say them.
+GOOGLE_LANGUAGES = {
+    "af": "Afrikaans", "sq": "Albanian", "am": "Amharic", "ar": "Arabic", "hy": "Armenian", "az": "Azerbaijani",
+    "eu": "Basque", "be": "Belarusian", "bn": "Bengali", "bs": "Bosnian", "bg": "Bulgarian", "ca": "Catalan",
+    "zh-CN": "Chinese", "zh-TW": "Chinese (traditional)", "hr": "Croatian", "cs": "Czech", "da": "Danish",
+    "nl": "Dutch", "en": "English", "eo": "Esperanto", "et": "Estonian", "tl": "Filipino", "fi": "Finnish",
+    "fr": "French", "gl": "Galician", "ka": "Georgian", "de": "German", "el": "Greek", "gu": "Gujarati",
+    "ht": "Haitian Creole", "ha": "Hausa", "haw": "Hawaiian", "he": "Hebrew", "hi": "Hindi", "hu": "Hungarian",
+    "is": "Icelandic", "id": "Indonesian", "ga": "Irish", "it": "Italian", "ja": "Japanese", "kn": "Kannada",
+    "kk": "Kazakh", "km": "Khmer", "ko": "Korean", "ku": "Kurdish", "lo": "Lao", "la": "Latin", "lv": "Latvian",
+    "lt": "Lithuanian", "lb": "Luxembourgish", "mk": "Macedonian", "ms": "Malay", "ml": "Malayalam",
+    "mt": "Maltese", "mi": "Maori", "mr": "Marathi", "mn": "Mongolian", "ne": "Nepali", "no": "Norwegian",
+    "fa": "Persian", "pl": "Polish", "pt": "Portuguese", "pa": "Punjabi", "ro": "Romanian", "ru": "Russian",
+    "sm": "Samoan", "gd": "Scottish Gaelic", "sr": "Serbian", "si": "Sinhala", "sk": "Slovak", "sl": "Slovenian",
+    "so": "Somali", "es": "Spanish", "sw": "Swahili", "sv": "Swedish", "tg": "Tajik", "ta": "Tamil",
+    "te": "Telugu", "th": "Thai", "tr": "Turkish", "uk": "Ukrainian", "ur": "Urdu", "uz": "Uzbek",
+    "vi": "Vietnamese", "cy": "Welsh", "xh": "Xhosa", "yi": "Yiddish", "yo": "Yoruba", "zu": "Zulu",
+}
+# Older codes Google still answers with.
+GOOGLE_OLD = {"iw": "he", "fil": "tl", "zh": "zh-CN"}
+
+
+class Google:
+    """Google Translate's free endpoint for its Chrome extension (clients5.google.com, no key).
+    The usual translate.googleapis.com one turns datacenter addresses away with 429s."""
+
+    URL = "https://clients5.google.com/translate_a/t"
+
+    def _call(self, text: str, target: str):
+        body = urllib.parse.urlencode({"q": text}).encode()
+        q = urllib.parse.urlencode({"client": "dict-chrome-ex", "sl": "auto", "tl": target})
+        req = urllib.request.Request(f"{self.URL}?{q}", data=body, headers={
+            "User-Agent": "Mozilla/5.0", "Content-Type": "application/x-www-form-urlencoded"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read())
+
+    async def languages(self) -> dict[str, str]:
+        return GOOGLE_LANGUAGES
+
+    async def translate(self, text: str, target: str) -> tuple[str, str]:
+        r = await asyncio.to_thread(self._call, text, target)
+        first = r[0] if isinstance(r, list) and r else ""
+        if isinstance(first, list):   # [translation, detected language]
+            out, source = first[0], first[1] if len(first) > 1 else ""
+        else:
+            out, source = str(first), ""
+        return out, GOOGLE_OLD.get(source, source)
 
 
 PREFIX = re.compile(r"^\s*(?:(?:translate )?(?:(?:in)?to|in) )?([^\s:][^:]{0,30}?)\s*:\s*(.+)$", re.S | re.I)
@@ -257,7 +308,10 @@ def main() -> None:
     login, password = os.environ.get("TRANSLATOR_LOGIN"), os.environ.get("TRANSLATOR_PASSWORD")
     if not login or not password:
         raise SystemExit("Set TRANSLATOR_LOGIN and TRANSLATOR_PASSWORD (in the environment or a .env file).")
-    backend = Libre(os.environ.get("TRANSLATE_URL", "http://libretranslate:5000"), os.environ.get("TRANSLATE_KEY", ""))
+    if os.environ.get("TRANSLATE_ENGINE", "google").lower() == "libre":
+        backend = Libre(os.environ.get("TRANSLATE_URL", "http://libretranslate:5000"), os.environ.get("TRANSLATE_KEY", ""))
+    else:
+        backend = Google()
     bot = Bot(os.environ.get("HOTLINE_HOST", "hotline.vespernet.net"), int(os.environ.get("HOTLINE_PORT", "5500")),
               login, password, os.environ.get("TRANSLATOR_NAME", "The Translator"),
               os.environ.get("TRANSLATOR_STATUS", "Say it in any language!"), data,

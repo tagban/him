@@ -15,6 +15,11 @@
   --me: #e00000;      /* your screen name in an IM */
   --them: #0000e0;    /* theirs */
   --link: #0000ee;
+  --text: #000000;        /* writing everywhere */
+  --muted: #505050;       /* quieter writing: hints, sizes, times */
+  --pane: #ffffff;        /* text boxes and white panes (conversations, lists) */
+  --select-text: #ffffff; /* on the selection and the title bar */
+  --notice: #ffffe1;      /* the one-line notices */
   --font: Tahoma, "Geneva", "Verdana", sans-serif;
   --size: 11px;
 }
@@ -28,7 +33,7 @@ html, body {
   background: var(--face);
   font-family: var(--font);
   font-size: var(--size);
-  color: #000;
+  color: var(--text);
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
@@ -55,7 +60,7 @@ html, body {
   height: 18px;
   padding: 0 2px 0 3px;
   background: linear-gradient(90deg, var(--title-a), var(--title-b));
-  color: #fff;
+  color: var(--select-text);
   font-weight: bold;
   gap: 3px;
 }
@@ -96,7 +101,7 @@ body.inactive .titlebar {
 .menubar .menu { position: relative; }
 .menubar .mtitle { padding: 2px 6px; height: 100%; display: flex; align-items: center; }
 .menubar .menu.open .mtitle,
-.menubar .mtitle:hover { background: var(--select); color: #fff; }
+.menubar .mtitle:hover { background: var(--select); color: var(--select-text); }
 .menubar .menu.open .mtitle { background: var(--select); }
 .mlist {
   display: none;
@@ -112,7 +117,7 @@ body.inactive .titlebar {
 }
 .menu.open > .mlist { display: block; }
 .mitem { padding: 3px 18px 3px 20px; white-space: nowrap; position: relative; }
-.mitem:hover:not(.disabled) { background: var(--select); color: #fff; }
+.mitem:hover:not(.disabled) { background: var(--select); color: var(--select-text); }
 .mitem.disabled { color: var(--shadow); text-shadow: 1px 1px var(--hilite); }
 .mitem.checked::before { content: "✓"; position: absolute; left: 6px; }
 .msep { height: 0; margin: 3px 1px; border-top: 1px solid var(--shadow); border-bottom: 1px solid var(--hilite); }
@@ -121,7 +126,7 @@ body.inactive .titlebar {
 
 button {
   font: inherit;
-  color: #000;
+  color: var(--text);
   background: var(--face);
   border: none;
   border-radius: 0;
@@ -142,13 +147,13 @@ button.default {
               inset -2px -2px var(--dark), inset 2px 2px var(--hilite),
               inset -3px -3px var(--shadow), inset 3px 3px var(--light);
 }
-button:focus-visible { outline: 1px dotted #000; outline-offset: -5px; }
+button:focus-visible { outline: 1px dotted var(--text); outline-offset: -5px; }
 button:disabled { color: var(--shadow); text-shadow: 1px 1px var(--hilite); }
 
 input[type=text], input[type=password], input[type=number], textarea, select, .field {
   font: inherit;
-  color: #000;
-  background: #fff;
+  color: var(--text);
+  background: var(--pane);
   border: none;
   border-radius: 0;
   padding: 3px 4px;
@@ -160,7 +165,7 @@ input[type=text], input[type=password], input[type=number], textarea, select, .f
 }
 input[type=text], input[type=password], input[type=number], select { height: 21px; }
 select { padding: 1px 2px; -webkit-appearance: none; appearance: none;
-  background: #fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='17'><rect x='0' y='0' width='16' height='17' fill='%23c0c0c0'/><path d='M0 0H15V1H1V16H0Z' fill='%23dfdfdf'/><path d='M15 0H16V17H0V16H15Z' fill='%230a0a0a'/><path d='M14 1H15V16H1V15H14Z' fill='%23808080'/><path d='M4 7H11L7.5 10.5Z' fill='%23000'/></svg>") no-repeat right 2px center;
+  background: var(--pane) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='17'><rect x='0' y='0' width='16' height='17' fill='%23c0c0c0'/><path d='M0 0H15V1H1V16H0Z' fill='%23dfdfdf'/><path d='M15 0H16V17H0V16H15Z' fill='%230a0a0a'/><path d='M14 1H15V16H1V15H14Z' fill='%23808080'/><path d='M4 7H11L7.5 10.5Z' fill='%23000'/></svg>") no-repeat right 2px center;
   padding-right: 20px; }
 input:disabled, textarea:disabled, select:disabled { background-color: var(--face); color: var(--shadow); }
 
@@ -171,7 +176,7 @@ input[type=checkbox], input[type=radio] {
   width: 13px;
   height: 13px;
   margin: 0;
-  background: #fff;
+  background: var(--pane);
   box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow),
               inset -2px -2px var(--light), inset 2px 2px var(--dark);
   flex: none;
@@ -184,7 +189,7 @@ input[type=checkbox]:checked::after {
   background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='7' height='7'><path d='M6 0h1v2h-1v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-2h1v1h1v1h1v-1h1v-1h1v-1h1z' fill='black'/></svg>");
 }
 input[type=radio] { border-radius: 50%; }
-input[type=radio]:checked::after { content: ""; position: absolute; left: 4px; top: 4px; width: 5px; height: 5px; border-radius: 50%; background: #000; }
+input[type=radio]:checked::after { content: ""; position: absolute; left: 4px; top: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--text); }
 
 fieldset {
   border: none;
@@ -203,7 +208,7 @@ a, .link { color: var(--link); text-decoration: underline; cursor: pointer; }
 
 /* sunken white panes: buddy tree, conversation */
 .pane {
-  background: #fff;
+  background: var(--pane);
   box-shadow: inset -1px -1px var(--hilite), inset 1px 1px var(--shadow),
               inset -2px -2px var(--light), inset 2px 2px var(--dark);
   padding: 2px;
@@ -212,7 +217,8 @@ a, .link { color: var(--link); text-decoration: underline; cursor: pointer; }
 
 /* Windows 98 scrollbars */
 ::-webkit-scrollbar { width: 16px; height: 16px; }
-::-webkit-scrollbar-track { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'><rect width='1' height='1' fill='%23c0c0c0'/><rect x='1' y='1' width='1' height='1' fill='%23c0c0c0'/><rect x='1' width='1' height='1' fill='%23ffffff'/><rect y='1' width='1' height='1' fill='%23ffffff'/></svg>"); }
+/* the checkered track, from the theme's own colors */
+::-webkit-scrollbar-track { background-color: var(--face); background-image: repeating-conic-gradient(var(--hilite) 0 25%, var(--face) 0 50%); background-size: 2px 2px; }
 ::-webkit-scrollbar-thumb {
   background: var(--face);
   box-shadow: inset -1px -1px var(--dark), inset 1px 1px var(--light),
@@ -223,6 +229,8 @@ a, .link { color: var(--link); text-decoration: underline; cursor: pointer; }
 ::-webkit-scrollbar-button:single-button:vertical:decrement { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='7' height='4'><path d='M3 0h1v1h1v1h1v1h1v1h-7v-1h1v-1h1v-1h1z'/></svg>"); }
 ::-webkit-scrollbar-button:single-button:vertical:increment { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='7' height='4'><path d='M0 0h7v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h-1z'/></svg>"); }
 ::-webkit-scrollbar-corner { background: var(--face); }
+html[data-theme=dark] ::-webkit-scrollbar-button:single-button:vertical:decrement { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='7' height='4'><path fill='%23e8e8e8' d='M3 0h1v1h1v1h1v1h1v1h-7v-1h1v-1h1v-1h1z'/></svg>"); }
+html[data-theme=dark] ::-webkit-scrollbar-button:single-button:vertical:increment { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='7' height='4'><path fill='%23e8e8e8' d='M0 0h7v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h-1z'/></svg>"); }
 
 /* ---------- tabs ---------- */
 
@@ -306,11 +314,11 @@ img.smiley { height: 1.5em; width: auto; vertical-align: -0.38em; }
 .row > input, .row > select { flex: 1; min-width: 0; }
 .buttons { display: flex; gap: 6px; justify-content: flex-end; margin-top: auto; }
 .error { color: #a00000; min-height: 13px; }
-.hint { color: #444; }
+.hint { color: var(--muted); }
 .center { text-align: center; }
 .grow { flex: 1; }
 
 .dlg-icon { width: 32px; height: 32px; flex: none; }
 
 /* the update notice: one quiet line */
-.update { flex: none; padding: 2px 8px; font-size: 10px; background: #ffffe1; border-bottom: 1px solid var(--shadow); color: #000; }
+.update { flex: none; padding: 2px 8px; font-size: 10px; background: var(--notice); border-bottom: 1px solid var(--shadow); color: var(--text); }

@@ -112,6 +112,10 @@ pub struct Prefs {
     pub icon_gallery: Option<String>,
     /// Where files from buddies are saved; None is Downloads/HIM.
     pub download_dir: Option<String>,
+    /// "classic" (Windows 98 gray) or "dark".
+    pub theme: String,
+    /// The user's own colors over the theme's, by name ("face", "text", "pane", ...).
+    pub colors: HashMap<String, String>,
 }
 
 impl Default for Prefs {
@@ -127,6 +131,8 @@ impl Default for Prefs {
             buddy_icon: None,
             icon_gallery: None,
             download_dir: None,
+            theme: "classic".into(),
+            colors: HashMap::new(),
         }
     }
 }

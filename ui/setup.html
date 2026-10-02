@@ -7,7 +7,7 @@
 <style>
   .snd { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
   .snd .what { width: 100px; flex: none; }
-  .snd .file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #404040; }
+  .snd .file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   .snd button { min-width: 0; padding: 1px 6px; min-height: 19px; }
 </style>
 </head>
@@ -20,6 +20,9 @@
       <label class="check"><input type="checkbox" id="sounds"> Play sounds (doors, new messages)</label>
       <label class="check" style="margin-top:5px"><input type="checkbox" id="timestamps"> Show timestamps in IM windows</label>
       <label class="check" style="margin-top:5px"><input type="checkbox" id="smileys"> Show smileys as pictures</label>
+      <div class="row" style="margin-top:6px"><label class="lbl" for="theme" style="width:auto">Theme</label>
+        <select id="theme" style="flex:none;width:90px"><option value="classic">Classic</option><option value="dark">Dark</option></select>
+        <button id="colors" style="min-width:0;padding:1px 8px">Colors...</button></div>
       <div class="row" style="margin-top:6px"><label class="lbl" for="size" style="width:auto">IM text size</label>
         <select id="size" style="flex:none;width:90px"><option value="10">Small</option><option value="12">Normal</option><option value="14">Large</option><option value="16">Larger</option></select></div>
     </fieldset>
@@ -57,6 +60,19 @@
     $('#auto').checked = p.autoResponse;
     $('#disc').checked = p.discoverable;
     $('#size').value = String(p.fontSize);
+    $('#theme').value = p.theme || 'classic';
+    // The theme shows as soon as it's picked; Cancel puts the old one back.
+    const themeWas = p.theme || 'classic';
+    $('#theme').onchange = async () => {
+      const cur = (await invoke('get_settings')).prefs;
+      await invoke('save_prefs', { prefs: { ...cur, theme: $('#theme').value } });
+    };
+    $('#colors').onclick = () => invoke('open_dialog', { kind: 'colors' });
+    $('#cancel').onclick = async () => {
+      const cur = (await invoke('get_settings')).prefs;
+      if ((cur.theme || 'classic') !== themeWas) await invoke('save_prefs', { prefs: { ...cur, theme: themeWas } });
+      thisWindow.close();
+    };
     // Received files: undefined = unchanged, null = back to Downloads/HIM, or a folder.
     let downloadDir;
     const [inUse, isDefault] = await invoke('received_folder_info');
@@ -81,7 +97,6 @@
       } catch (e) { $('#err').textContent = String(e); }
     };
   })();
-  $('#cancel').onclick = () => thisWindow.close();
 
   const EVENTS = [['buddyIn', 'Buddy signs on'], ['buddyOut', 'Buddy signs off'], ['imReceive', 'IM received'], ['imSend', 'IM sent']];
   function renderSounds(p) {

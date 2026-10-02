@@ -12,14 +12,14 @@
   .convo .who { font-weight: bold; color: var(--them); }
   .convo .mine .who { color: var(--me); }
   .convo .emote { color: #7a1fa2; font-style: italic; }
-  .convo .join, .convo .leave, .convo .system { color: #707070; font-style: italic; }
+  .convo .join, .convo .leave, .convo .system { color: var(--muted); font-style: italic; }
   .convo .pm { color: #806000; }
-  .convo .ts { color: #808080; font-size: 0.85em; }
+  .convo .ts { color: var(--muted); font-size: 0.85em; }
   .side { width: 140px; flex: none; display: flex; flex-direction: column; gap: 3px; }
   .side .count { padding: 2px 1px; font-weight: bold; }
   .people { flex: 1; min-height: 0; padding: 2px 0; }
   .people div { padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .people div.sel { background: var(--select); color: #fff; }
+  .people div.sel { background: var(--select); color: var(--select-text); }
   .people .away { color: var(--shadow); font-style: italic; }
   .people .ignored { text-decoration: line-through; color: var(--shadow); }
   .people .me { font-weight: bold; }
@@ -27,7 +27,7 @@
   .compose { flex: none; display: flex; gap: 4px; align-items: stretch; }
   .compose textarea { flex: 1; height: 42px; resize: none; font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
   .compose .sendbtn { width: 64px; min-width: 0; font-weight: bold; }
-  .convo .via { color: #808080; font-size: 0.9em; }
+  .convo .via { color: var(--muted); font-size: 0.9em; }
 </style>
 </head>
 <body>

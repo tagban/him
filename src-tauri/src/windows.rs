@@ -128,6 +128,7 @@ pub async fn open_dialog(app: AppHandle, kind: String, arg: Option<String>) {
         "name" => (290.0, 170.0, "Display Name"),
         "gallery" => (470.0, 440.0, "Buddy Icons"),
         "chatrooms" => (430.0, 400.0, "Chat Rooms"),
+        "colors" => (300.0, 420.0, "Colors"),
         _ => return,
     };
     let label = if arg.is_empty() {

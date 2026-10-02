@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Colors</title>
+<link rel="stylesheet" href="aim.css">
+<style>
+  .crow { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .crow .what { flex: 1; }
+  .crow input[type=color] { width: 40px; height: 20px; padding: 0; border: 1px solid var(--shadow); background: var(--pane); }
+  .crow button { min-width: 0; padding: 0 6px; min-height: 19px; }
+  .crow.custom .what { font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar"></div>
+  <div class="body">
+    <div class="row"><label class="lbl" for="theme" style="width:auto">Theme</label>
+      <select id="theme" style="flex:none;width:110px"><option value="classic">Classic</option><option value="dark">Dark</option></select></div>
+    <fieldset>
+      <legend>Colors</legend>
+      <div class="hint" style="font-size:10px;margin-bottom:4px">Changes show at once. Bold ones are yours; Default goes back to the theme's.</div>
+      <div id="list"></div>
+    </fieldset>
+    <div class="buttons"><button id="resetall">Reset All</button><button class="default" id="close">Close</button></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+  setupWindow({ title: 'Colors', minimize: false });
+  let prefs;
+  let saving;
+
+  // The theme's color for a name (what "Default" goes back to), read from aim.css and the theme.
+  function themeColor(name) {
+    const t = THEMES[prefs.theme] || {};
+    if (t[name]) return t[name];
+    const root = document.documentElement.style, mine = root.getPropertyValue('--' + name);
+    root.removeProperty('--' + name);
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim();
+    if (mine) root.setProperty('--' + name, mine);
+    return v;
+  }
+
+  function save() {
+    applyTheme(prefs);   // this window at once; the others when it's saved
+    clearTimeout(saving);
+    saving = setTimeout(async () => {
+      const cur = (await invoke('get_settings')).prefs;
+      await invoke('save_prefs', { prefs: { ...cur, theme: prefs.theme, colors: prefs.colors } }).catch(e => alertBox(String(e)));
+    }, 150);
+  }
+
+  function render() {
+    $('#theme').value = prefs.theme || 'classic';
+    $('#list').innerHTML = COLOR_NAMES.map(([k, label]) => {
+      const mine = prefs.colors?.[k];
+      return `<div class="crow${mine ? ' custom' : ''}" data-k="${k}"><span class="what">${esc(label)}</span>` +
+        `<input type="color" value="${esc(mine || themeColor(k))}"><button class="def"${mine ? '' : ' disabled'}>Default</button></div>`;
+    }).join('');
+    $$('.crow').forEach(row => {
+      const k = row.dataset.k;
+      $('input', row).oninput = e => {
+        prefs.colors = { ...(prefs.colors || {}), [k]: e.target.value };
+        row.classList.add('custom');
+        $('.def', row).disabled = false;
+        save();
+      };
+      $('.def', row).onclick = () => { delete prefs.colors[k]; save(); render(); };
+    });
+  }
+
+  (async () => {
+    prefs = (await invoke('get_settings')).prefs;
+    prefs.colors = prefs.colors || {};
+    render();
+  })();
+  $('#theme').onchange = () => { prefs.theme = $('#theme').value; save(); render(); };
+  $('#resetall').onclick = () => { prefs.colors = {}; save(); render(); };
+  $('#close').onclick = () => thisWindow.close();
+</script>
+</body>
+</html>

@@ -6,18 +6,18 @@
 <link rel="stylesheet" href="aim.css">
 <style>
   /* The icons were drawn for a light gray (BadassBuddy's #e6e6e6): transparent ones look wrong on white. */
-  .grid { flex: 1; min-height: 0; overflow-y: auto; background: #e9e9e9; padding: 4px;
+  .grid { flex: 1; min-height: 0; overflow-y: auto; background: var(--face); padding: 4px;
     display: grid; grid-template-columns: repeat(auto-fill, 56px); grid-auto-rows: 56px; gap: 4px; justify-content: center; align-content: start; }
   .cell { display: grid; place-items: center; cursor: default; border: 1px solid transparent; }
   .cell img { width: 48px; height: 48px; }
-  .cell:hover { border-color: #c0c0c0; }
+  .cell:hover { border-color: var(--shadow); }
   .cell.sel { border: 1px dotted #000; background: var(--select); }
   .top { display: flex; gap: 6px; align-items: center; }
   .top input { flex: 1; min-width: 0; }
-  .count { color: #505050; white-space: nowrap; }
+  .count { color: var(--muted); white-space: nowrap; }
   .credit { font-size: 11px; }
-  .credit a { color: #000080; }
-  .chosen { color: #404040; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .credit a { color: var(--select); }
+  .chosen { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>

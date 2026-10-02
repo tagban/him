@@ -19,9 +19,9 @@
     overflow: hidden;
   }
   .banner img { width: 84px; height: 84px; image-rendering: auto; }
-  .wordmark { margin-top: 2px; font-family: "Arial Black", "Arial", sans-serif; font-weight: 900; font-style: italic; font-size: 17px; line-height: 1; letter-spacing: -0.3px; color: #1a1a1a; }
+  .wordmark { margin-top: 2px; font-family: "Arial Black", "Arial", sans-serif; font-weight: 900; font-style: italic; font-size: 17px; line-height: 1; letter-spacing: -0.3px; color: var(--text); }
   .wordmark span { color: #d01008; }
-  .sub { font-family: Arial, sans-serif; font-weight: bold; font-style: italic; font-size: 11px; color: #222; margin-top: 1px; }
+  .sub { font-family: Arial, sans-serif; font-weight: bold; font-style: italic; font-size: 11px; color: var(--text); margin-top: 1px; }
   .form { padding: 2px 6px; display: flex; flex-direction: column; gap: 3px; }
   .form .lbl { font-weight: bold; margin-top: 2px; }
   .lblrow { display: flex; align-items: baseline; justify-content: space-between; }
@@ -36,16 +36,16 @@
   .btnrow .small svg { width: 18px; height: 18px; }
   .signbtn { margin-left: auto; min-width: 0; width: 74px; height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-weight: bold; }
   .signbtn svg { width: 22px; height: 22px; }
-  .dropdown { position: absolute; z-index: 20; background: #fff; box-shadow: 1px 1px 0 #000, inset 0 0 0 1px #000; max-height: 120px; overflow: auto; display: none; }
+  .dropdown { position: absolute; z-index: 20; background: var(--pane); box-shadow: 1px 1px 0 #000, inset 0 0 0 1px #000; max-height: 120px; overflow: auto; display: none; }
   .dropdown div { padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dropdown div:hover, .dropdown div.sel { background: var(--select); color: #fff; }
+  .dropdown div:hover, .dropdown div.sel { background: var(--select); color: var(--select-text); }
   .steps { display: none; padding: 10px 8px; flex-direction: column; gap: 9px; }
   .step { display: flex; gap: 8px; align-items: center; color: var(--shadow); }
   .step .dot { width: 14px; height: 14px; display: grid; place-items: center; }
-  .step.now { color: #000; font-weight: bold; }
-  .step.done { color: #000; }
+  .step.now { color: var(--text); font-weight: bold; }
+  .step.done { color: var(--text); }
   .step.done .dot::after { content: "✓"; color: #008000; font-weight: bold; }
-  .step.now .dot::after { content: ""; width: 8px; height: 8px; background: #000080; animation: blink 0.6s steps(2) infinite; }
+  .step.now .dot::after { content: ""; width: 8px; height: 8px; background: var(--select); animation: blink 0.6s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .setup { display: none; padding: 6px; flex-direction: column; gap: 5px; }
   .signing .form, .signing .btnrow { display: none; }

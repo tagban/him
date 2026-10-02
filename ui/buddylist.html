@@ -19,7 +19,7 @@
   }
   .banner img { width: 36px; height: 36px; flex: none; }
   .banner .w1 { font-family: "Arial Black", Arial, sans-serif; font-style: italic; font-weight: 900; font-size: 13px; color: #d01008; line-height: 1; }
-  .banner .w2 { font-size: 10px; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .banner .w2 { font-size: 10px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .banner .txt { min-width: 0; }
   .tabpanel { padding: 4px; }
   .tree { flex: 1; min-height: 0; padding: 2px 0; }
@@ -28,27 +28,27 @@
   .bud { display: flex; align-items: center; gap: 3px; padding: 1px 3px 1px 16px; white-space: nowrap; }
   .bud .ic { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
   .bud .nm { overflow: hidden; text-overflow: ellipsis; }
-  .bud.sel .nm, .grp.sel .gn { background: var(--select); color: #fff; outline: 1px dotted #fff; outline-offset: -1px; }
-  .bud.away .nm { color: #000; }
+  .bud.sel .nm, .grp.sel .gn { background: var(--select); color: var(--select-text); outline: 1px dotted #fff; outline-offset: -1px; }
+  .bud.away .nm { color: var(--text); }
   .bud.away .nm::after { content: ""; }
   .bud.idle .nm, .bud.offline .nm { color: var(--shadow); }
   .bud.gone .nm { font-style: italic; color: var(--shadow); }
   .bud.arrived .nm { font-weight: bold; }
-  .bud.pending .nm { font-style: italic; color: #505050; }
+  .bud.pending .nm { font-style: italic; color: var(--muted); }
   .bud.blocked .nm { text-decoration: line-through; color: var(--shadow); }
   .bud .unread { margin-left: auto; color: #c00000; font-weight: bold; padding-left: 4px; }
   .bud.drop, .grp.drop { background: #c8d8ff; }
   .setupbtns { display: flex; gap: 3px; margin-top: 4px; }
   .setupbtns button { min-width: 0; flex: 1; padding: 2px 3px; }
   .me { display: flex; align-items: center; gap: 4px; padding: 0 2px 3px; font-weight: bold; white-space: nowrap; overflow: hidden; }
-  .me .st { font-weight: normal; color: #505050; overflow: hidden; text-overflow: ellipsis; }
+  .me .st { font-weight: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
   .offline-note { color: var(--shadow); padding: 6px; text-align: center; }
-  .conn { background: #ffffe1; }
-  .suggest { margin: 2px 2px 6px; padding: 4px 6px; background: #ffffe1; border: 1px solid #c0c0a0; font-size: 11px; }
+  .conn { background: var(--notice); }
+  .suggest { margin: 2px 2px 6px; padding: 4px 6px; background: var(--notice); border: 1px solid #c0c0a0; font-size: 11px; }
   .suggest .sh { display: flex; justify-content: space-between; margin-bottom: 3px; }
-  .suggest .sh a { color: #000080; }
+  .suggest .sh a { color: var(--select); }
   .suggest .srow { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 0; }
-  .suggest .sa { color: #505050; }
+  .suggest .sa { color: var(--muted); }
   .suggest button { min-width: 0; padding: 0 8px; height: 20px; font-size: 11px; }
 </style>
 </head>

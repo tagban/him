@@ -6,6 +6,37 @@ const invoke = T.core.invoke;
 const listen = T.event.listen;
 const thisWindow = T.window.getCurrentWindow();
 
+// ---------- themes: Classic (aim.css as written), Dark, and the user's own colors ----------
+
+const THEMES = {
+  classic: {},
+  dark: {
+    face: '#2b2b2b', hilite: '#4a4a4a', light: '#363636', shadow: '#141414', dark: '#000000',
+    text: '#e8e8e8', muted: '#a8a8a8', pane: '#1c1c1c', 'select-text': '#ffffff', notice: '#3a3620',
+    select: '#2f5fb3', 'title-a': '#1a2850', 'title-b': '#2d5a98', 'title-off-a': '#333333', 'title-off-b': '#4d4d4d',
+    me: '#ff7474', them: '#7eaaff', link: '#8cb8ff',
+  },
+};
+/// The colors people can change (Setup > Colors), in order.
+const COLOR_NAMES = [
+  ['face', 'Windows'], ['text', 'Text'], ['muted', 'Quieter text'], ['pane', 'Text boxes and lists'],
+  ['title-a', 'Title bar'], ['title-b', 'Title bar fade'], ['select', 'Selection'],
+  ['me', 'Your name in IMs'], ['them', 'Their name in IMs'], ['link', 'Links'], ['notice', 'Notices'],
+];
+const THEME_VARS = [...new Set([...Object.keys(THEMES.dark), ...COLOR_NAMES.map(c => c[0])])];
+
+/// Sets the theme on this window; remembered locally, so new windows open in it at once.
+function applyTheme(prefs) {
+  const all = { ...(THEMES[prefs?.theme] || {}), ...(prefs?.colors || {}) };
+  const root = document.documentElement.style;
+  for (const k of THEME_VARS) all[k] ? root.setProperty('--' + k, all[k]) : root.removeProperty('--' + k);
+  document.documentElement.dataset.theme = prefs?.theme || 'classic';
+  try { localStorage.setItem('him-theme', JSON.stringify({ theme: prefs?.theme, colors: prefs?.colors })); } catch {}
+}
+try { applyTheme(JSON.parse(localStorage.getItem('him-theme') || 'null')); } catch {}
+invoke('get_settings').then(s => applyTheme(s.prefs)).catch(() => {});
+listen('prefs', e => applyTheme(e.payload));
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -128,7 +159,7 @@ function alertBox(text, { icon = 'warn', title = 'HIM' } = {}) {
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,0.001);z-index:100';
     host.innerHTML = `<div style="position:relative;width:min(92vw,280px);background:var(--face);padding:3px;box-shadow:inset -1px -1px var(--dark),inset 1px 1px var(--light),inset -2px -2px var(--shadow),inset 2px 2px var(--hilite)">
-      <div class="titlebar" style="background:linear-gradient(90deg,var(--title-a),var(--title-b));color:#fff"><span class="ttext">${esc(title)}</span></div>
+      <div class="titlebar" style="background:linear-gradient(90deg,var(--title-a),var(--title-b));color: var(--select-text)"><span class="ttext">${esc(title)}</span></div>
       <div style="display:flex;gap:10px;padding:10px 8px 6px;align-items:flex-start"><span class="dlg-icon">${ICON[icon] || ''}</span><div class="selectable" style="flex:1;user-select:text;-webkit-user-select:text;white-space:pre-wrap;word-break:break-word">${esc(text)}</div></div>
       <div style="display:flex;justify-content:center;padding:4px 0 6px"><button class="default">OK</button></div></div>`;
     document.body.appendChild(host);
@@ -145,7 +176,7 @@ function confirmBox(text, { yes = 'Yes', no = 'No', icon = 'question', title = '
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;z-index:100';
     host.innerHTML = `<div style="width:min(92vw,280px);background:var(--face);padding:3px;box-shadow:inset -1px -1px var(--dark),inset 1px 1px var(--light),inset -2px -2px var(--shadow),inset 2px 2px var(--hilite)">
-      <div class="titlebar" style="background:linear-gradient(90deg,var(--title-a),var(--title-b));color:#fff"><span class="ttext">${esc(title)}</span></div>
+      <div class="titlebar" style="background:linear-gradient(90deg,var(--title-a),var(--title-b));color: var(--select-text)"><span class="ttext">${esc(title)}</span></div>
       <div style="display:flex;gap:10px;padding:10px 8px 6px;align-items:flex-start"><span class="dlg-icon">${ICON[icon] || ''}</span><div style="flex:1;white-space:pre-wrap">${esc(text)}</div></div>
       <div style="display:flex;justify-content:center;gap:6px;padding:4px 0 6px"><button class="default y">${esc(yes)}</button><button class="n">${esc(no)}</button></div></div>`;
     document.body.appendChild(host);

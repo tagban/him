@@ -82,10 +82,10 @@ const ICON = {
 
 function setupWindow({ title, minimize = true, onClose } = {}) {
   const bar = $('.titlebar');
-  bar.setAttribute('data-tauri-drag-region', '');
-  bar.innerHTML = `<span class="ticon">${ICON.h}</span><span class="ttext" data-tauri-drag-region>${esc(title)}</span>` +
+  bar.innerHTML = `<span class="ticon">${ICON.h}</span><span class="ttext">${esc(title)}</span>` +
     (minimize ? `<button class="tbtn min" title="Minimize">${ICON.min}</button>` : '') +
     `<button class="tbtn close" title="Close">${ICON.close}</button>`;
+  dragByTitlebar(bar);
   if (minimize) $('.tbtn.min', bar).onclick = () => thisWindow.minimize();
   $('.tbtn.close', bar).onclick = () => (onClose ? onClose() : thisWindow.close());
   setTitle(title);
@@ -98,6 +98,35 @@ function setupWindow({ title, minimize = true, onClose } = {}) {
   document.addEventListener('contextmenu', e => {
     if (!e.target.closest('input, textarea, .selectable')) e.preventDefault();
   });
+}
+
+// Tauri's drag region starts moving the window on mousedown. On Linux the move begins
+// a moment later, often after a quick click's button is already up, and the window
+// then sticks to the pointer until the next click (a popup that appears under the
+// mouse made it easy to hit). There, the move starts only once the mouse moves with
+// the button still held.
+const LINUX = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+
+function dragByTitlebar(bar) {
+  if (!LINUX) {
+    bar.setAttribute('data-tauri-drag-region', '');
+    $('.ttext', bar).setAttribute('data-tauri-drag-region', '');
+    return;
+  }
+  let down = null;
+  bar.addEventListener('mousedown', e => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    down = { x: e.screenX, y: e.screenY };
+  });
+  window.addEventListener('mousemove', e => {
+    if (!down) return;
+    if (!(e.buttons & 1)) { down = null; return; }
+    if (Math.abs(e.screenX - down.x) + Math.abs(e.screenY - down.y) < 4) return;
+    down = null;
+    thisWindow.startDragging().catch(() => {});
+  });
+  window.addEventListener('mouseup', () => { down = null; });
 }
 
 function setTitle(title) {

@@ -299,7 +299,7 @@ class TranslatorRoom:
 
 
 def main() -> None:
-    from .bot import Bot, load_env
+    from .bot import Bot, load_env, load_icon
 
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -316,7 +316,7 @@ def main() -> None:
               login, password, os.environ.get("TRANSLATOR_NAME", "TheTranslator"),
               os.environ.get("TRANSLATOR_STATUS", "Say it in any language!"), data,
               brain=Translator(data, backend), app_string="The Translator 0.1", welcome=INTRO,
-              bang_commands=False)
+              bang_commands=False, icon=load_icon(os.environ.get("TRANSLATOR_ICON"), "translator.png"))
     rooms = []
     for entry in filter(None, (h.strip() for h in os.environ.get("HUB_HOST", "").split(","))):
         host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")

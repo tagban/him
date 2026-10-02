@@ -296,7 +296,7 @@ class Desk:
 
 
 def main() -> None:
-    from .bot import Bot, load_env
+    from .bot import Bot, load_env, load_icon
 
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -318,7 +318,8 @@ def main() -> None:
     name = os.environ.get("BUGBOT_NAME", "BugBot")
     bot = Bot(os.environ.get("HOTLINE_HOST", "hotline.vespernet.net"), int(os.environ.get("HOTLINE_PORT", "5500")),
               login, password, name, os.environ.get("BUGBOT_STATUS", "Found a bug? Tell me!"), data,
-              brain=Desk(data, filer, uploader), app_string="BugBot 0.1", welcome=INTRO, bang_commands=False)
+              brain=Desk(data, filer, uploader), app_string="BugBot 0.1", welcome=INTRO, bang_commands=False,
+              icon=load_icon(os.environ.get("BUGBOT_ICON"), "bugbot.png"))
     try:
         asyncio.run(bot.run())
     except KeyboardInterrupt:

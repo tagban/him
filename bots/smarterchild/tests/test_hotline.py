@@ -199,3 +199,31 @@ def test_a_file_goes_through_the_sealed_relay(mock_server):
         await bob.close()
 
     asyncio.run(run())
+
+
+def test_buddy_icon_is_set_once(mock_server, tmp_path):
+    from pathlib import Path
+
+    from smarterchild.bot import Bot, load_icon
+
+    icon = load_icon(None, "smarterchild.png")
+    assert icon and icon.startswith(b"\x89PNG") and len(icon) < 16384
+
+    async def run():
+        bot = Bot("127.0.0.1", mock_server, "bob", "hotline", "Bob", "hi", tmp_path, icon=icon)
+        task = asyncio.create_task(bot.session())
+        for _ in range(100):
+            if bot.client and bot.client.wire:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.5)
+        assert await bot.client.own_icon_hash() == Client.icon_hash(icon)
+        alice = Client("127.0.0.1", mock_server, "alice", "hotline")
+        await alice.connect()
+        r = await alice.request(Tx.GET_BUDDY_ICON, [(F.FRIEND_LOGIN, b"bob")])
+        assert r.get(F.BUDDY_ICON) == icon   # a buddy gets the picture
+        await alice.close()
+        await bot.client.close()
+        task.cancel()
+
+    asyncio.run(run())

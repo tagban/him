@@ -8,6 +8,8 @@ Settings come from the environment (or a .env file beside the data folder):
   SMARTERCHILD_NAME       the name buddies see, default SmarterChild
   SMARTERCHILD_STATUS     the status line, default: Ask me anything! Type "help".
   SMARTERCHILD_DATA       where memory and reminders are kept, default ./data
+  SMARTERCHILD_ICON       a Buddy Icon file (GIF/PNG/JPEG, 64x64 at most); default the robot in
+                          assets/, empty for none
 
 And in a server's public chat (leave HUB_HOST empty to stay out of chat):
   HUB_HOST, HUB_PORT      the server, e.g. the Hotline Central Hub; port default 5500. Several
@@ -49,7 +51,7 @@ def load_env(path: Path) -> None:
 class Bot:
     def __init__(self, host: str, port: int, login: str, password: str, name: str, status: str, data: Path,
                  brain=None, app_string: str = "SmarterChild 0.1", welcome: str | None = None,
-                 bang_commands: bool = True):
+                 bang_commands: bool = True, icon: bytes | None = None):
         """`brain` answers messages (`answer(login, text) -> [replies]`); SmarterChild's own by
         default. BugBot brings its own, a welcome line, and no "!" commands or reminders."""
         self.host, self.port, self.login, self.password = host, port, login, password
@@ -57,6 +59,7 @@ class Bot:
         self.brain = brain if brain is not None else Brain(data, name)
         self.brain.send = self.send
         self.app_string, self.welcome_text, self.bang_commands = app_string, welcome, bang_commands
+        self.icon = icon  # its Buddy Icon (a small GIF, PNG or JPEG), set at sign-on
         self.client: Client | None = None
         self.recent: dict[str, deque] = defaultdict(deque)  # login -> times of recent messages
         self.warned: dict[str, float] = {}
@@ -179,6 +182,7 @@ class Bot:
         log.info("signed on to %s as %s (%s)", c.server_name or self.host, self.login, c.transport)
         await c.set_presence(hotline.ONLINE, self.status, discoverable=True)
         await self.publish_name()
+        await self.publish_icon()
         for b in await c.get_roster():
             if b.state == hotline.PENDING_IN:
                 asyncio.create_task(self.welcome(b.login))
@@ -199,6 +203,19 @@ class Bot:
         except HotlineError as e:
             log.info("couldn't set the display name: %s", e)
 
+    async def publish_icon(self) -> None:
+        """Sets the Buddy Icon, unless the server already has this one."""
+        c = self.client
+        if not self.icon or not c or c.max_icon_bytes is None:
+            return
+        try:
+            if await c.own_icon_hash() == c.icon_hash(self.icon):
+                return
+            await c.set_buddy_icon(self.icon)
+            log.info("set the Buddy Icon (%d bytes)", len(self.icon))
+        except HotlineError as e:
+            log.info("couldn't set the Buddy Icon: %s", e)
+
     async def run(self) -> None:
         wait = 5
         while True:
@@ -218,6 +235,17 @@ class Bot:
             log.info("reconnecting in %ds", wait)
             await asyncio.sleep(wait + random.random() * 2)
             wait = min(wait * 2, 300)
+
+
+def load_icon(path: str | None, bundled: str) -> bytes | None:
+    """A Buddy Icon: the file at `path` if given (empty: none), else the one in assets/."""
+    if path == "":
+        return None
+    try:
+        return Path(path).read_bytes() if path else (Path(__file__).parent / "assets" / bundled).read_bytes()
+    except OSError as e:
+        log.warning("no Buddy Icon: %s", e)
+        return None
 
 
 def typing_time(reply: str) -> float:
@@ -256,7 +284,8 @@ def main() -> None:
         raise SystemExit("Set SMARTERCHILD_LOGIN and SMARTERCHILD_PASSWORD (in the environment or a .env file).")
     bot = Bot(os.environ.get("HOTLINE_HOST", "hotline.vespernet.net"), int(os.environ.get("HOTLINE_PORT", "5500")),
               login, password, os.environ.get("SMARTERCHILD_NAME", "SmarterChild"),
-              os.environ.get("SMARTERCHILD_STATUS", 'Ask me anything! Type "help".'), data)
+              os.environ.get("SMARTERCHILD_STATUS", 'Ask me anything! Type "help".'), data,
+              icon=load_icon(os.environ.get("SMARTERCHILD_ICON"), "smarterchild.png"))
     hubs = []
     for entry in filter(None, (h.strip() for h in os.environ.get("HUB_HOST", "").split(","))):
         from .hub import Hub

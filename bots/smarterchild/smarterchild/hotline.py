@@ -56,6 +56,8 @@ class Tx:
     FILE_DECLINE = 816
     FILE_READY = 817
     GET_USER_INFO = 825
+    SET_BUDDY_ICON = 827
+    GET_BUDDY_ICON = 828
 
 
 class F:
@@ -99,7 +101,10 @@ class F:
     REASON_CODE = 0x060F
     REQUEST_NOTE = 0x0610
     DISCOVERABLE = 0x0611
+    BUDDY_ICON = 0x061D
+    BUDDY_ICON_HASH = 0x061E
     MAX_MESSAGE_BYTES = 0x0620
+    MAX_ICON_BYTES = 0x0623
 
 
 CAP_TEXT_ENCODING = 1 << 1
@@ -464,6 +469,7 @@ class Client:
         self.user_id = 0
         self.utf8 = True
         self.max_message_bytes = 4096
+        self.max_icon_bytes: int | None = None  # None: the server keeps no Buddy Icons
         self.server_name: str | None = None
         self.transport = ""
         self.wire: Wire | None = None
@@ -603,6 +609,7 @@ class Client:
             raise HotlineError("Instant messaging isn't available on this server (or for this account).")
         self.utf8 = bool(caps & CAP_TEXT_ENCODING)
         self.max_message_bytes = reply.uint(F.MAX_MESSAGE_BYTES) or 4096
+        self.max_icon_bytes = reply.uint(F.MAX_ICON_BYTES)
         self.server_name = self.dec(reply.get(F.SERVER_NAME)) or None
         self.wire = wire
         self.closed.clear()
@@ -783,6 +790,25 @@ class Client:
 
     def typing(self, login: str, on: bool) -> None:
         self.notify(Tx.IM_TYPING, [(F.FRIEND_LOGIN, self.enc(login)), u16(F.TYPING_STATE, int(on))])
+
+    # ---- Buddy Icons (Capabilities-Buddy-Icons.md) ----
+
+    @staticmethod
+    def icon_hash(picture: bytes) -> bytes:
+        return hashlib.sha256(picture).digest()[:16]
+
+    async def own_icon_hash(self) -> bytes | None:
+        """The hash of the icon the server has for us (Get User Info, 825, on ourselves)."""
+        r = await self.request(Tx.GET_USER_INFO, [(F.FRIEND_LOGIN, self.enc(self.login))])
+        return r.get(F.BUDDY_ICON_HASH) or None
+
+    async def set_buddy_icon(self, picture: bytes) -> None:
+        """Set Buddy Icon (827): a GIF, PNG or JPEG within the server's limits."""
+        if self.max_icon_bytes is None:
+            raise HotlineError("This server doesn't keep Buddy Icons.")
+        if len(picture) > self.max_icon_bytes:
+            raise HotlineError(f"The icon is too big for this server ({self.max_icon_bytes} bytes at most).")
+        await self.request(Tx.SET_BUDDY_ICON, [(F.BUDDY_ICON, picture)])
 
     # ---- files (guide §14, the relay path) ----
 
